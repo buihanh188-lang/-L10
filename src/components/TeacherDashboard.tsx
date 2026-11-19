@@ -9,6 +9,7 @@ import {
   Calendar,
   CheckCircle2,
   ChevronDown,
+  ClipboardPaste,
   Clock,
   Cloud,
   Download,
@@ -57,6 +58,7 @@ import {
 import { QuestionBankAudit } from './QuestionBankAudit';
 import { LessonLearningAnalytics } from './LessonLearningAnalytics';
 import { VideoLectureManager } from './VideoLectureManager';
+import { ZaloScoreAggregator } from './ZaloScoreAggregator';
 import { useLanguage } from '../contexts/LanguageContext';
 import { localizeExamTitle, localizeQuestion, localizeTeacherHistoryReason } from '../services/bilingualQuestions';
 import { getLocalizedChapter, getLocalizedLesson, getLocalizedTopic } from '../data/bilingualCurriculum';
@@ -97,8 +99,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   }
 
   const [activeTab, setActiveTab] = useState<
-    'multi_school' | 'lesson_analytics' | 'videos' | 'analytics' | 'questions' | 'audit' | 'exams' | 'classes' | 'pedagogical_report' | 'cloud'
-  >('multi_school');
+    'zalo_import' | 'multi_school' | 'lesson_analytics' | 'videos' | 'analytics' | 'questions' | 'audit' | 'exams' | 'classes' | 'pedagogical_report' | 'cloud'
+  >('zalo_import');
+  const [dataVersion, setDataVersion] = useState(0);
+  const handleDataChanged = () => {
+    setDataVersion((v) => v + 1);
+    onRefreshData();
+  };
 
   // Filter states for analytics
   const [selectedClass, setSelectedClass] = useState<string>('all');
@@ -709,6 +716,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       {/* Navigation Sub-Tabs */}
       <div className="flex overflow-x-auto pb-1 gap-2 border-b border-slate-200">
         <button
+          onClick={() => setActiveTab('zalo_import')}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold shrink-0 transition-all cursor-pointer ${
+            activeTab === 'zalo_import'
+              ? 'bg-teal-600 text-white shadow-xs'
+              : 'text-teal-800 bg-teal-50/70 hover:bg-teal-100/80 border border-teal-200/70'
+          }`}
+        >
+          <ClipboardPaste className="w-4 h-4" />
+          <span>{isEn ? 'Import Zalo Result Slips' : 'Tổng hợp phiếu Zalo'}</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('multi_school')}
           className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold shrink-0 transition-all cursor-pointer ${
             activeTab === 'multi_school'
@@ -830,17 +849,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       </div>
 
       {/* ============================================================ */}
+      {/* SUB-TAB ZALO: DÁN PHIẾU KẾT QUẢ TỪ ZALO ĐỂ TỔNG HỢP ĐIỂM     */}
+      {/* ============================================================ */}
+      {activeTab === 'zalo_import' && (
+        <ZaloScoreAggregator onDataChanged={handleDataChanged} />
+      )}
+
+      {/* ============================================================ */}
       {/* SUB-TAB 0: TRUNG TÂM THỐNG KÊ 4 KHU VỰC & BÁO CÁO SKKN */}
       {/* ============================================================ */}
       {activeTab === 'multi_school' && (
-        <MultiSchoolStats currentUser={currentUser} />
+        <MultiSchoolStats key={`ms-${dataVersion}`} currentUser={currentUser} />
       )}
 
       {/* ============================================================ */}
       {/* SUB-TAB 0.5: THỐNG KÊ HỌC TẬP THEO TỪNG BÀI (40 BÀI HỌC)     */}
       {/* ============================================================ */}
       {activeTab === 'lesson_analytics' && (
-        <LessonLearningAnalytics questions={questions} currentUser={currentUser} />
+        <LessonLearningAnalytics key={`la-${dataVersion}`} questions={questions} currentUser={currentUser} />
       )}
 
       {/* ============================================================ */}

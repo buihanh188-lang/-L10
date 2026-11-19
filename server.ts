@@ -2487,7 +2487,10 @@ async function startServer() {
   const distIndex = path.join(distDir, 'index.html');
   const isTsxDev = process.execArgv.some((arg) => arg.includes('tsx'));
   const shouldServeDist =
-    fs.existsSync(distIndex) && (process.env.NODE_ENV === 'production' || !isTsxDev);
+    fs.existsSync(distIndex) &&
+    (process.env.NODE_ENV === 'production' ||
+      process.env.DISABLE_HMR === 'true' ||
+      !isTsxDev);
 
   if (shouldServeDist) {
     const gzipCache = new Map<string, { buf: Buffer; mime: string }>();

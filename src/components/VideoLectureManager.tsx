@@ -1221,17 +1221,6 @@ export const VideoLectureManager: React.FC = () => {
               </>
             )}
 
-            {stats.localUploadableIds.length > 0 && (
-              <a
-                href={withToken('/api/teacher/videos/bundle.tar')}
-                download="DiaLi10-40-Videos.tar"
-                className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold flex items-center space-x-1.5"
-                title="Tải xuống trọn bộ các tệp .mp4 hiện có trên máy chủ về máy tính (không cần pop-up)"
-              >
-                <Download className="w-3.5 h-3.5 text-teal-700" />
-                <span>Tải gói {stats.localUploadableIds.length} MP4 (.tar)</span>
-              </a>
-            )}
           </div>
         </div>
 

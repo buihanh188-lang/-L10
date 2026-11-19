@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
   AlertTriangle,
   Award,
   BookOpen,
   Calendar,
+  Check,
   CheckCircle,
   Clock,
   Compass,
+  Copy,
   FileCheck,
   Flame,
   Layers,
@@ -21,6 +23,7 @@ import { TOPICS } from '../data/topics';
 import { getLocalizedTopic } from '../data/bilingualCurriculum';
 import { localizeExamTitle } from '../services/bilingualQuestions';
 import { useLanguage } from '../contexts/LanguageContext';
+import { copyTextToClipboard, formatResultSlip } from '../utils/resultSlip';
 
 interface StudentStatsProps {
   currentUser: UserProfile;
@@ -34,8 +37,17 @@ export const StudentStats: React.FC<StudentStatsProps> = ({
 }) => {
   const { language, t } = useLanguage();
   const isEn = language === 'en';
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const allRecords = StorageService.getStudentRecords(currentUser.id);
+
+  const handleCopyHistorySlip = async (rec: ExamRecord) => {
+    const ok = await copyTextToClipboard(formatResultSlip(rec));
+    if (ok) {
+      setCopiedId(rec.id);
+      window.setTimeout(() => setCopiedId((prev) => (prev === rec.id ? null : prev)), 3000);
+    }
+  };
 
   // Compute metrics
   const totalAttempts = allRecords.length;
@@ -454,7 +466,32 @@ export const StudentStats: React.FC<StudentStatsProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-3 self-end sm:self-center">
+                <div className="flex items-center space-x-2.5 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyHistorySlip(rec)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                      copiedId === rec.id
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border-teal-200'
+                    }`}
+                    title={isEn ? 'Copy result slip for Zalo' : 'Sao chép phiếu kết quả gửi Zalo'}
+                  >
+                    {copiedId === rec.id ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {copiedId === rec.id
+                        ? isEn
+                          ? 'Copied'
+                          : 'Đã chép'
+                        : isEn
+                          ? 'Copy Slip'
+                          : 'Sao chép phiếu'}
+                    </span>
+                  </button>
                   <div
                     className={`px-3 py-1.5 rounded-xl font-extrabold text-base border ${
                       rec.score >= 8.0

@@ -1,12 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import confetti from 'canvas-confetti';
 import {
   AlertCircle,
   Award,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
+  Copy,
   Home,
   RefreshCw,
+  Send,
   Sparkles,
   XCircle,
 } from 'lucide-react';
@@ -20,6 +25,7 @@ import {
   localizeRecommendationText,
   localizeStoredAnswerText,
 } from '../services/bilingualQuestions';
+import { copyTextToClipboard, formatResultSlip } from '../utils/resultSlip';
 
 interface QuizResultViewProps {
   record: ExamRecord;
@@ -36,6 +42,23 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
 }) => {
   const { language, t } = useLanguage();
   const isEn = language === 'en';
+  const [copiedSlip, setCopiedSlip] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const [showSlipPreview, setShowSlipPreview] = useState(false);
+
+  const resultSlipText = useMemo(() => formatResultSlip(record), [record]);
+
+  const handleCopyResultSlip = async () => {
+    const ok = await copyTextToClipboard(resultSlipText);
+    if (ok) {
+      setCopiedSlip(true);
+      setCopyError(false);
+      window.setTimeout(() => setCopiedSlip(false), 4500);
+    } else {
+      setCopyError(true);
+      setShowSlipPreview(true);
+    }
+  };
 
   useEffect(() => {
     if (record.score >= 8.0) {
@@ -186,6 +209,28 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center justify-center gap-3 pt-6">
           <button
+            type="button"
+            onClick={handleCopyResultSlip}
+            className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-white text-xs sm:text-sm font-bold shadow-sm transition-all hover:scale-102 cursor-pointer ${
+              copiedSlip
+                ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25'
+                : 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/25'
+            }`}
+          >
+            {copiedSlip ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            <span>
+              {copiedSlip
+                ? isEn
+                  ? 'Result Slip Copied!'
+                  : 'Đã sao chép phiếu kết quả!'
+                : isEn
+                  ? 'Copy Result Slip (Zalo)'
+                  : 'Sao chép phiếu kết quả'}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={onRetry}
             className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-sm shadow-blue-500/20 transition-all hover:scale-102 cursor-pointer"
           >
@@ -193,12 +238,66 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
             <span>{isEn ? 'Retake This Test' : 'Làm lại bài này'}</span>
           </button>
           <button
+            type="button"
             onClick={onHome}
             className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs sm:text-sm font-bold transition-colors cursor-pointer"
           >
             <Home className="w-4 h-4" />
             <span>{isEn ? 'Back to Home' : 'Về trang chủ'}</span>
           </button>
+        </div>
+
+        {/* Zalo Result Slip Status & Preview */}
+        <div className="mt-4 max-w-xl mx-auto text-left">
+          {copiedSlip && (
+            <div className="mb-2.5 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+              <Send className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                {isEn
+                  ? 'Copied! Paste and send this result slip via Zalo to your teacher for gradebook aggregation.'
+                  : 'Đã sao chép phiếu kết quả! Em hãy mở Zalo, dán và gửi cho giáo viên để tổng hợp bảng điểm.'}
+              </span>
+            </div>
+          )}
+
+          {copyError && (
+            <div className="mb-2.5 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-medium">
+              {isEn
+                ? 'Automatic clipboard copy was blocked by the browser. Please select and copy the text below manually.'
+                : 'Trình duyệt chặn tự động sao chép. Em hãy bôi đen nội dung phiếu bên dưới rồi bấm Sao chép để gửi qua Zalo.'}
+            </div>
+          )}
+
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowSlipPreview((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 hover:text-teal-900 cursor-pointer"
+            >
+              <span>
+                {showSlipPreview
+                  ? isEn
+                    ? 'Hide result slip preview'
+                    : 'Ẩn nội dung phiếu kết quả'
+                  : isEn
+                    ? 'Preview result slip before sending on Zalo'
+                    : 'Xem trước nội dung phiếu gửi Zalo'}
+              </span>
+              {showSlipPreview ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+
+          {showSlipPreview && (
+            <div className="mt-2.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <pre className="text-xs text-slate-800 whitespace-pre-wrap font-mono leading-relaxed select-all">
+                {resultSlipText}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
 
