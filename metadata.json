@@ -1,0 +1,8 @@
+{
+  "name": "Remix Địa Lí 10 – Chinh Phục Tri Thức",
+  "description": "Nền tảng ôn luyện và kiểm tra đánh giá môn Địa lí 10 bộ sách Kết nối tri thức với cuộc sống - Tổ Sử – Địa – GDKTPL, Trường THPT Hòa Bình, xã Vạn Linh, Lạng Sơn. GV: Bùi Thị Hồng Hạnh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

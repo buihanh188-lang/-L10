@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "updatedAt": 1795066394239,
+  "approvals": {
+    "bai-1": {
+      "lessonId": "bai-1",
+      "version": 2,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-2": {
+      "lessonId": "bai-2",
+      "version": 2,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-3": {
+      "lessonId": "bai-3",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-4": {
+      "lessonId": "bai-4",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-5": {
+      "lessonId": "bai-5",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-6": {
+      "lessonId": "bai-6",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-7": {
+      "lessonId": "bai-7",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-8": {
+      "lessonId": "bai-8",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-9": {
+      "lessonId": "bai-9",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-10": {
+      "lessonId": "bai-10",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-11": {
+      "lessonId": "bai-11",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-12": {
+      "lessonId": "bai-12",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-13": {
+      "lessonId": "bai-13",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-14": {
+      "lessonId": "bai-14",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-15": {
+      "lessonId": "bai-15",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-16": {
+      "lessonId": "bai-16",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-17": {
+      "lessonId": "bai-17",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-18": {
+      "lessonId": "bai-18",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-19": {
+      "lessonId": "bai-19",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-20": {
+      "lessonId": "bai-20",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-21": {
+      "lessonId": "bai-21",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-22": {
+      "lessonId": "bai-22",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-23": {
+      "lessonId": "bai-23",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-24": {
+      "lessonId": "bai-24",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-25": {
+      "lessonId": "bai-25",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-26": {
+      "lessonId": "bai-26",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-27": {
+      "lessonId": "bai-27",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-28": {
+      "lessonId": "bai-28",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-29": {
+      "lessonId": "bai-29",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-30": {
+      "lessonId": "bai-30",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-31": {
+      "lessonId": "bai-31",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-32": {
+      "lessonId": "bai-32",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-33": {
+      "lessonId": "bai-33",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-34": {
+      "lessonId": "bai-34",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-35": {
+      "lessonId": "bai-35",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-36": {
+      "lessonId": "bai-36",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-37": {
+      "lessonId": "bai-37",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-38": {
+      "lessonId": "bai-38",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-39": {
+      "lessonId": "bai-39",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    },
+    "bai-40": {
+      "lessonId": "bai-40",
+      "version": 1,
+      "isApproved": true,
+      "isPublished": true,
+      "approvedAt": "2026-11-18T17:56:52.147Z",
+      "approvedBy": "Bùi Thị Hồng Hạnh",
+      "updatedAt": 1795066394239
+    }
+  }
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Địa Lí 10 – Chinh Phục Tri Thức | THPT Hoà Bình - Lạng Sơn</title>
+    <meta name="description" content="Nền tảng ôn luyện và kiểm tra đánh giá môn Địa lí 10 bộ sách Kết nối tri thức với cuộc sống - Tổ Sử – Địa – GDKTPL, Trường THPT Hòa Bình, xã Vạn Linh, tỉnh Lạng Sơn. GV: Bùi Thị Hồng Hạnh." />
+    <meta property="og:title" content="Địa Lí 10 – Chinh Phục Tri Thức" />
+    <meta property="og:description" content="Nền tảng ôn luyện và kiểm tra đánh giá môn Địa lí 10 - Tổ Sử – Địa – GDKTPL, Trường THPT Hòa Bình, xã Vạn Linh, tỉnh Lạng Sơn." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+    <script>
+      window.__APP_BOOT_ERRORS__ = [];
+      window.addEventListener('error', function (e) {
+        var msg = (e && e.message) || (e && e.target && (e.target.src || e.target.href) ? 'Không tải được tệp: ' + (e.target.src || e.target.href) : 'Lỗi không xác định');
+        window.__APP_BOOT_ERRORS__.push(msg);
+        var el = document.getElementById('app-boot-status');
+        if (el) {
+          el.style.color = '#fca5a5';
+          el.textContent = 'Lỗi tải ứng dụng: ' + msg;
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        var reason = e && e.reason ? (e.reason.message || String(e.reason)) : 'Không xác định';
+        window.__APP_BOOT_ERRORS__.push(reason);
+        var el = document.getElementById('app-boot-status');
+        if (el) {
+          el.style.color = '#fca5a5';
+          el.textContent = 'Lỗi khởi tạo: ' + reason;
+        }
+      });
+    </script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+  </head>
+  <body>
+    <div id="root">
+      <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0f172a;color:#f8fafc;font-family:'Plus Jakarta Sans',system-ui,sans-serif;padding:24px;text-align:center;">
+        <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#0284c7,#0f766e);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;margin-bottom:16px;box-shadow:0 8px 24px rgba(2,132,199,0.35);">ĐL</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px;">Địa Lí 10 – Chinh Phục Tri Thức</div>
+        <div id="app-boot-status" style="font-size:13px;color:#94a3b8;max-width:540px;line-height:1.5;">Đang tải hệ thống (v2)...</div>
+        <button id="app-boot-retry" onclick="window.location.reload()" style="display:none;margin-top:14px;padding:8px 16px;border-radius:10px;border:none;background:#0284c7;color:#fff;font-weight:700;font-size:12px;cursor:pointer;">Tải lại trang</button>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var sec = 0;
+        var probed = false;
+        var iv = setInterval(function () {
+          var el = document.getElementById('app-boot-status');
+          if (!el) { clearInterval(iv); return; }
+          sec++;
+          if (window.__APP_BOOT_ERRORS__ && window.__APP_BOOT_ERRORS__.length > 0) {
+            el.style.color = '#fca5a5';
+            el.textContent = 'Lỗi (v2): ' + window.__APP_BOOT_ERRORS__.join(' | ');
+            var r = document.getElementById('app-boot-retry');
+            if (r) r.style.display = 'inline-block';
+            clearInterval(iv);
+            return;
+          }
+          if (sec < 4) {
+            el.textContent = 'Đang tải hệ thống (v2)... (' + sec + 's)';
+            return;
+          }
+          if (!probed) {
+            probed = true;
+            var r2 = document.getElementById('app-boot-retry');
+            if (r2) r2.style.display = 'inline-block';
+            var modScript = document.querySelector('script[type="module"][src]');
+            var src = modScript ? modScript.getAttribute('src') : '(không có module script)';
+            el.style.color = '#fde68a';
+            el.textContent = 'Chẩn đoán (v2): Đang kiểm tra ' + src + ' ...';
+            if (modScript) {
+              fetch(src, { credentials: 'include' }).then(function (resp) {
+                var ct = resp.headers.get('content-type') || '';
+                var enc = resp.headers.get('content-encoding') || '';
+                el.textContent = 'Chẩn đoán (v2): ' + src + ' -> HTTP ' + resp.status + ' | ' + ct + (enc ? ' | ' + enc : '');
+              }).catch(function (err) {
+                el.style.color = '#fca5a5';
+                el.textContent = 'Lỗi tải ' + src + ': ' + (err && err.message ? err.message : String(err));
+              });
+            }
+          }
+        }, 1000);
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

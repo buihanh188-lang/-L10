@@ -1,0 +1,17 @@
+[
+  {
+    "id": "teacher-bui-thi-hong-hanh",
+    "username": "buihanh188",
+    "email": "buihanh188@gmail.com",
+    "name": "Bùi Thị Hồng Hạnh",
+    "role": "teacher",
+    "code": "GV-DL10",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "department": "TỔ SỬ – ĐỊA – GDKTPL",
+    "salt": "d2fad26f94e7886bbc68586e933bbf66",
+    "passwordHash": "3cf953a886206cc6c9bfaa57200bf1e23a4ac6252ac4cceaad5aaa9db78f9bbf",
+    "updatedAt": "2026-11-04T13:12:00.000Z"
+  }
+]
