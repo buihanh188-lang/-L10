@@ -1,8 +1,10 @@
 import { initializeApp } from 'firebase/app';
 import {
+  browserLocalPersistence,
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
+  setPersistence,
   signInAnonymously,
   signInWithPopup,
   signOut,
@@ -38,11 +40,15 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
+// Explicitly persist Auth sessions locally across mobile Safari/Chrome restarts
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch(() => {});
+}
+
 export const TEACHER_ADMIN_EMAIL = 'buihanh188@gmail.com';
 const OFFICIAL_SCHOOL_KEY = normalizeSchoolKey('TRƯỜNG THPT HÒA BÌNH');
 
 const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export enum OperationType {
   CREATE = 'create',
@@ -173,6 +179,11 @@ export async function ensureAnonymousStudentSession(): Promise<{
 }
 
 export async function signInWithGooglePopup(): Promise<FirebaseUser> {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+  } catch {
+    // ignore
+  }
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
 }

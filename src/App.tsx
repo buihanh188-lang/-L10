@@ -24,6 +24,7 @@ import { LanguageProvider, useLanguage, LanguageSwitcher } from './contexts/Lang
 import {
   ensureAnonymousStudentSession,
   isCloudSyncEligibleUser,
+  isTeacherFirebaseUser,
   subscribeCloudData,
   subscribeFirebaseAuth,
 } from './services/firebase';
@@ -37,6 +38,7 @@ function AppContent() {
     StorageService.getQuestions()
   );
   const [isTeacherVerified, setIsTeacherVerified] = useState<boolean>(false);
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState<boolean>(false);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState<boolean>(false);
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -84,6 +86,8 @@ function AppContent() {
   React.useEffect(() => {
     let unsubCloud: (() => void) | null = null;
     const unsubAuth = subscribeFirebaseAuth((fbUser) => {
+      setFirebaseAuthReady(true);
+
       if (unsubCloud) {
         unsubCloud();
         unsubCloud = null;
@@ -91,6 +95,27 @@ function AppContent() {
 
       if (isCloudSyncEligibleUser(fbUser)) {
         apiService.setCloudAuthContext(fbUser);
+
+        // Automatically restore verified teacher session when returning to /admin
+        if (isTeacherFirebaseUser(fbUser)) {
+          const p = window.location.pathname;
+          const params = new URLSearchParams(window.location.search);
+          const onAdminPath =
+            p === '/admin' ||
+            p.startsWith('/admin/') ||
+            params.get('portal') === 'teacher' ||
+            params.get('admin') === 'login';
+          const stored = StorageService.getCurrentUser();
+          if (onAdminPath || stored?.role === 'teacher') {
+            const restored = apiService.restoreTeacherSessionFromFirebase(fbUser);
+            if (restored) {
+              StorageService.setTeacherSession(restored.token, restored.user);
+              setCurrentUser(restored.user);
+              setIsTeacherVerified(true);
+            }
+          }
+        }
+
         unsubCloud = subscribeCloudData(
           fbUser,
           (payload) => {
@@ -383,12 +408,12 @@ function AppContent() {
               </button>
               <button
                 onClick={() => {
-                  apiService.setTeacherToken(null);
+                  apiService.teacherLogout().catch(() => {});
                   StorageService.clearCurrentUser();
                   setCurrentUser(null);
                   setIsTeacherVerified(false);
                 }}
-                className="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
+                className="px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
               >
                 {language === 'en' ? 'Sign out' : 'Đăng xuất'}
               </button>
@@ -413,6 +438,23 @@ function AppContent() {
             </React.Suspense>
           </main>
           <Footer />
+        </div>
+      );
+    }
+
+    if (!firebaseAuthReady) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center p-6">
+          <div className="text-center space-y-2">
+            <div className="w-10 h-10 mx-auto rounded-2xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-black">
+              ĐL
+            </div>
+            <p className="text-sm font-bold">
+              {language === 'en'
+                ? 'Restoring Teacher Admin session...'
+                : 'Đang khôi phục phiên Quản trị Giáo viên...'}
+            </p>
+          </div>
         </div>
       );
     }

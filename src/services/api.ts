@@ -734,6 +734,28 @@ class ApiService {
     return { success: true, token, user };
   }
 
+  restoreTeacherSessionFromFirebase(
+    fbUser: { uid: string; email?: string | null; emailVerified?: boolean } | null | undefined
+  ): { token: string; user: UserProfile } | null {
+    if (!fbUser || !fbUser.uid || !fbUser.emailVerified) return null;
+    if ((fbUser.email || '').toLowerCase() !== TEACHER_ADMIN_EMAIL) return null;
+
+    const existingToken = this.getTeacherToken();
+    const token =
+      existingToken && existingToken.startsWith('firebase-teacher-')
+        ? existingToken
+        : `firebase-teacher-${fbUser.uid}-${Date.now()}`;
+
+    const user: UserProfile = {
+      ...DEFAULT_TEACHER_USER,
+      email: fbUser.email || DEFAULT_TEACHER_USER.email,
+      lastLoginAt: new Date().toISOString(),
+    };
+    this.setTeacherToken(token);
+    this.setCloudAuthContext(fbUser);
+    return { token, user };
+  }
+
   async connectStudentGoogleAccount(
     profile?: UserProfile | null
   ): Promise<{ email: string; uid: string; syncedPending: number }> {
