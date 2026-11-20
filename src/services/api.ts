@@ -19,8 +19,13 @@ import {
   INITIAL_CLASSES,
   INITIAL_EXAM_RECORDS,
   INITIAL_STUDENTS,
+  OFFICIAL_PASSWORD_HASHES,
   REGISTERED_SCHOOLS,
 } from '../data/mockUsers';
+import {
+  generateRandomStudentPassword,
+  hashStudentPassword,
+} from '../utils/passwordHash';
 import { LESSONS } from '../data/lessons';
 import { CURRICULUM_CHAPTERS, CURRICULUM_PARTS } from '../data/curriculum';
 import {
@@ -37,7 +42,9 @@ import defaultLessonsConfig from '../data/defaultLessons.json';
 import {
   auth,
   deleteAttemptFromCloud,
+  ensureAnonymousStudentSession,
   fetchCloudDataOnce,
+  isCloudSyncEligibleUser,
   isTeacherFirebaseUser,
   isVerifiedFirebaseUser,
   sanitizeFirestoreId,
@@ -58,6 +65,8 @@ const CLASSES_KEY = 'dia_li_10_classes';
 const QUESTIONS_KEY = 'dia_li_10_questions';
 const TEACHER_EXAMS_KEY = 'dia_li_10_teacher_exams';
 const VIDEO_CATALOG_KEY = 'dia_li_10_video_catalog_v1';
+const ROSTER_VERSION_KEY = 'dia_li_10_roster_version';
+const CURRENT_ROSTER_VERSION = 'hb-real-2026-v1';
 const VIDEO_CATALOG_DEFAULT_SYNC_KEY = 'dia_li_10_video_catalog_default_sync_v1';
 
 const DEFAULT_TEACHER_USER: UserProfile = {
@@ -193,6 +202,58 @@ class ApiService {
   private cloudIsTeacher = false;
   private dataListeners = new Set<() => void>();
 
+  constructor() {
+    this.migrateLegacyDemoDataOnce();
+  }
+
+  private migrateLegacyDemoDataOnce(): void {
+    try {
+      if (typeof window === 'undefined') return;
+      if (safeGetItem(ROSTER_VERSION_KEY) === CURRENT_ROSTER_VERSION) return;
+
+      const isLegacyDemoStudentId = (id: string) => /^hs-(hb|cl|hl)-\d{2}$/i.test(String(id || ''));
+      const isLegacyDemoAttemptId = (id: string) => /^rec-(hb|cl|hl)-\d{3}$/i.test(String(id || ''));
+      const isLegacyDemoClassId = (id: string) =>
+        /^class-(cl|hl)-/i.test(String(id || '')) || id === 'class-hb-10a3';
+
+      // Clean legacy fake demo students while preserving any real added students
+      const rawStudents = safeGetItem(STUDENTS_KEY);
+      if (rawStudents) {
+        const parsed = JSON.parse(rawStudents);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter((s: any) => s && !isLegacyDemoStudentId(s.id));
+          safeSetItem(STUDENTS_KEY, JSON.stringify(cleaned));
+        }
+      }
+
+      // Clean legacy fake demo exam attempts while preserving all real submissions
+      const rawRecords = safeGetItem(EXAM_RECORDS_KEY);
+      if (rawRecords) {
+        const parsed = JSON.parse(rawRecords);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(
+            (r: any) => r && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
+          );
+          safeSetItem(EXAM_RECORDS_KEY, JSON.stringify(cleaned));
+        }
+      }
+
+      // Clean legacy fake demo classes
+      const rawClasses = safeGetItem(CLASSES_KEY);
+      if (rawClasses) {
+        const parsed = JSON.parse(rawClasses);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter((c: any) => c && !isLegacyDemoClassId(c.id));
+          safeSetItem(CLASSES_KEY, JSON.stringify(cleaned));
+        }
+      }
+
+      safeSetItem(ROSTER_VERSION_KEY, CURRENT_ROSTER_VERSION);
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   subscribeToDataChanges(listener: () => void): () => void {
     this.dataListeners.add(listener);
     return () => {
@@ -210,12 +271,15 @@ class ApiService {
     });
   }
 
-  setCloudAuthContext(user: { uid: string; email?: string | null; emailVerified?: boolean } | null): void {
-    if (user && user.uid && user.emailVerified) {
+  setCloudAuthContext(
+    user: { uid: string; email?: string | null; emailVerified?: boolean; isAnonymous?: boolean } | null
+  ): void {
+    if (user && user.uid && (user.emailVerified || user.isAnonymous)) {
       this.cloudConnected = true;
       this.cloudUserEmail = user.email || null;
-      this.cloudIsTeacher =
-        Boolean(user.email && user.email.toLowerCase() === TEACHER_ADMIN_EMAIL);
+      this.cloudIsTeacher = Boolean(
+        user.emailVerified && user.email && user.email.toLowerCase() === TEACHER_ADMIN_EMAIL
+      );
     } else {
       this.cloudConnected = false;
       this.cloudUserEmail = null;
@@ -267,20 +331,46 @@ class ApiService {
     connected: boolean;
     email: string | null;
     isTeacher: boolean;
+    isAnonymous: boolean;
     cloudAttemptCount: number;
     cloudStudentCount: number;
     pendingCount: number;
   } {
     const current = auth.currentUser;
-    const connected = isVerifiedFirebaseUser(current) || this.cloudConnected;
+    const connected = isCloudSyncEligibleUser(current) || this.cloudConnected;
     return {
       connected,
       email: current?.email || this.cloudUserEmail,
       isTeacher: isTeacherFirebaseUser(current) || this.cloudIsTeacher,
+      isAnonymous: Boolean(current?.isAnonymous),
       cloudAttemptCount: this.cloudAttempts.length,
       cloudStudentCount: this.cloudStudents.length,
       pendingCount: this.getPendingAttempts().length,
     };
+  }
+
+  async retryStudentAutoSync(
+    profile?: UserProfile | null
+  ): Promise<{ synced: boolean; syncedPending: number; needsConsoleEnable?: boolean }> {
+    const session = await ensureAnonymousStudentSession();
+    if (!session.user) {
+      return {
+        synced: false,
+        syncedPending: 0,
+        needsConsoleEnable: session.needsConsoleEnable,
+      };
+    }
+    this.setCloudAuthContext(session.user);
+    if (profile && profile.role === 'student') {
+      try {
+        await syncStudentProfileToCloud(profile);
+      } catch {
+        // non-blocking
+      }
+    }
+    const flushed = await this.flushPendingAttempts(profile || undefined);
+    await this.refreshCloudData();
+    return { synced: flushed.failed === 0, syncedPending: flushed.synced };
   }
 
   async refreshCloudData(): Promise<boolean> {
@@ -606,34 +696,18 @@ class ApiService {
   }
 
   // =========================================================================
-  // TEACHER AUTHENTICATION (100% LOCAL)
+  // TEACHER AUTHENTICATION (STRICT VERIFIED GOOGLE + FIREBASE AUTH ONLY)
   // =========================================================================
   async teacherLogin(
-    username: string,
-    password: string
+    _username: string,
+    _password: string
   ): Promise<{ success: boolean; token: string; user: UserProfile }> {
-    const cleanUser = username.trim().toLowerCase();
-    const cleanPass = password.trim();
-
-    const allowedUsernames = ['buihanh188', 'buihanh188@gmail.com', 'gv-dl10', 'admin'];
-    const validPass = cleanPass === 'CoHanh@DiaLi10' || cleanPass === '123456';
-
-    if (!allowedUsernames.includes(cleanUser) || !validPass) {
-      throw new Error(
-        this.msg(
-          'Tên đăng nhập hoặc mật khẩu giáo viên không chính xác. (Gợi ý: buihanh188 / CoHanh@DiaLi10)',
-          'Invalid teacher username or password. (Hint: buihanh188 / CoHanh@DiaLi10)'
-        )
-      );
-    }
-
-    const token = `local-teacher-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const user: UserProfile = {
-      ...DEFAULT_TEACHER_USER,
-      lastLoginAt: new Date().toISOString(),
-    };
-    this.setTeacherToken(token);
-    return { success: true, token, user };
+    throw new Error(
+      this.msg(
+        'Để bảo mật tuyệt đối (tránh học sinh vào nhầm), cổng quản trị chỉ cho phép đăng nhập bằng tài khoản Google chính chủ của giáo viên.',
+        'For strict security, teacher admin access requires verified Google Sign-In.'
+      )
+    );
   }
 
   async teacherLoginWithGoogle(): Promise<{ success: boolean; token: string; user: UserProfile }> {
@@ -642,8 +716,8 @@ class ApiService {
       await signOutFirebase();
       throw new Error(
         this.msg(
-          `Tài khoản Google "${fbUser.email || ''}" không phải tài khoản giáo viên quản trị (${TEACHER_ADMIN_EMAIL}). Vui lòng chọn đúng Gmail của cô Bùi Thị Hồng Hạnh.`,
-          `Google account "${fbUser.email || ''}" is not authorized as teacher admin (${TEACHER_ADMIN_EMAIL}).`
+          `Tài khoản Google "${fbUser.email || ''}" không có quyền giáo viên quản trị. Vui lòng chọn đúng Gmail chính chủ của cô Bùi Thị Hồng Hạnh.`,
+          `Google account "${fbUser.email || ''}" is not authorized as teacher admin.`
         )
       );
     }
@@ -701,7 +775,15 @@ class ApiService {
 
   async verifyTeacherSession(): Promise<boolean> {
     const token = this.getTeacherToken();
-    return Boolean(token && token.length > 5);
+    if (!token || !token.startsWith('firebase-teacher-')) {
+      return false;
+    }
+    try {
+      await auth.authStateReady();
+      return isTeacherFirebaseUser(auth.currentUser);
+    } catch {
+      return false;
+    }
   }
 
   async getTeacherSystemStatus(): Promise<{
@@ -1302,8 +1384,14 @@ class ApiService {
     this.ensureClassExistsLocal(normalizedRecord.className, normalizedRecord.schoolName);
 
     let cloudSynced = false;
-    if (isVerifiedFirebaseUser(auth.currentUser)) {
-      try {
+    try {
+      if (!isCloudSyncEligibleUser(auth.currentUser)) {
+        const session = await ensureAnonymousStudentSession();
+        if (session.user) {
+          this.setCloudAuthContext(session.user);
+        }
+      }
+      if (isCloudSyncEligibleUser(auth.currentUser)) {
         const res = await syncAttemptToCloud(normalizedRecord, studentProfile);
         cloudSynced = res.synced;
         if (cloudSynced) {
@@ -1311,12 +1399,11 @@ class ApiService {
         } else {
           this.addPendingAttempt(normalizedRecord);
         }
-      } catch (e) {
-        console.warn('Cloud sync failed, queued in pending attempts:', e);
+      } else {
         this.addPendingAttempt(normalizedRecord);
       }
-    } else {
-      // Queue until student signs in with Google (1-click sync on result screen)
+    } catch (e) {
+      console.warn('Cloud sync failed, queued in pending attempts:', e);
       this.addPendingAttempt(normalizedRecord);
     }
 
@@ -1424,7 +1511,13 @@ class ApiService {
   async flushPendingAttempts(user?: UserProfile): Promise<{ synced: number; failed: number }> {
     const pending = this.getPendingAttempts();
     if (pending.length === 0) return { synced: 0, failed: 0 };
-    if (!isVerifiedFirebaseUser(auth.currentUser)) {
+    if (!isCloudSyncEligibleUser(auth.currentUser)) {
+      const session = await ensureAnonymousStudentSession();
+      if (session.user) {
+        this.setCloudAuthContext(session.user);
+      }
+    }
+    if (!isCloudSyncEligibleUser(auth.currentUser)) {
       return { synced: 0, failed: pending.length };
     }
 
@@ -1613,35 +1706,45 @@ class ApiService {
 
     const students = this.getAllStudentsLocal();
     const targetLower = cleanUser.toLowerCase();
-    const targetNorm = stripDiacriticsLower(cleanUser);
+    const compactCode = targetLower.replace(/[\s_-]+/g, '');
 
-    const found = students.find(
-      (s) =>
-        (s.code && s.code.toLowerCase() === targetLower) ||
-        (s.username && s.username.toLowerCase() === targetLower) ||
-        stripDiacriticsLower(s.name) === targetNorm
-    );
+    const found = students.find((s) => {
+      const codeLower = (s.code || '').toLowerCase();
+      const userLower = (s.username || '').toLowerCase();
+      const codeCompact = codeLower.replace(/[\s_-]+/g, '');
+      return (
+        (codeLower && codeLower === targetLower) ||
+        (userLower && userLower === targetLower) ||
+        (codeCompact && codeCompact === compactCode)
+      );
+    });
 
     if (!found) {
       throw new Error(
         this.msg(
-          `Không tìm thấy tài khoản học sinh "${cleanUser}". Hãy kiểm tra mã học sinh (ví dụ: HB-1001) hoặc dùng mục "Học sinh mở rộng" để tạo phiên học tập mới.`,
-          `Student account "${cleanUser}" not found. Check your student code (e.g., HB-1001) or use "Extended Student" to start immediately.`
+          `Không tìm thấy mã học sinh "${cleanUser}". Vui lòng nhập đúng Mã học sinh do cô Hạnh cấp (ví dụ: 10A1-01) hoặc chọn mục "Người học mở rộng".`,
+          `Student code "${cleanUser}" not found. Please enter your assigned Student Code or use "Open Learner".`
         )
       );
     }
 
+    const codeKey = (found.code || '').toLowerCase();
     const passwords = this.getPasswordMap();
-    const expectedPassword =
-      passwords[found.id] ||
-      (found.code ? passwords[found.code.toLowerCase()] : undefined) ||
-      '123456';
+    const customOverride = passwords[found.id] || (codeKey ? passwords[codeKey] : undefined);
+    const officialHash = codeKey ? OFFICIAL_PASSWORD_HASHES[codeKey] : undefined;
 
-    if (cleanPass !== expectedPassword) {
+    let passwordMatches = false;
+    if (customOverride) {
+      passwordMatches = cleanPass.toUpperCase() === String(customOverride).trim().toUpperCase();
+    } else if (officialHash && found.code) {
+      passwordMatches = hashStudentPassword(found.code, cleanPass) === officialHash;
+    }
+
+    if (!passwordMatches) {
       throw new Error(
         this.msg(
-          'Mật khẩu chưa đúng. Mật khẩu mặc định cho học sinh là 123456.',
-          'Incorrect password. The default student password is 123456.'
+          'Mật khẩu chưa chính xác. Nếu quên mật khẩu, em vui lòng liên hệ giáo viên bộ môn để được cấp lại.',
+          'Incorrect password. Please contact your subject teacher if you need a password reset.'
         )
       );
     }
@@ -1651,6 +1754,16 @@ class ApiService {
       isActivated: true,
       lastLoginAt: new Date().toISOString(),
     });
+
+    // Silently initialize background Firebase student session (no Gmail popup needed)
+    ensureAnonymousStudentSession()
+      .then((res) => {
+        if (res.user) {
+          this.setCloudAuthContext(res.user);
+          return syncStudentProfileToCloud(updatedUser);
+        }
+      })
+      .catch(() => {});
 
     return { success: true, user: updatedUser };
   }
@@ -1710,6 +1823,17 @@ class ApiService {
 
     const saved = this.upsertStudentLocal(newStudent);
     this.ensureClassExistsLocal(normClass, normSchool);
+
+    // Silently initialize background Firebase student session (no Gmail popup needed)
+    ensureAnonymousStudentSession()
+      .then((res) => {
+        if (res.user) {
+          this.setCloudAuthContext(res.user);
+          return syncStudentProfileToCloud(saved);
+        }
+      })
+      .catch(() => {});
+
     return { success: true, user: saved };
   }
 
@@ -1787,7 +1911,7 @@ class ApiService {
   }
 
   async resetStudentPassword(studentId: string, newPassword?: string): Promise<any> {
-    const pwd = (newPassword || '123456').trim() || '123456';
+    const pwd = (newPassword || '').trim() || generateRandomStudentPassword(6);
     const passwords = this.getPasswordMap();
     passwords[studentId] = pwd;
     const found = this.getAllStudentsLocal().find((s) => s.id === studentId);
@@ -1798,9 +1922,11 @@ class ApiService {
     return {
       success: true,
       studentId,
+      studentName: found?.name || '',
+      studentCode: found?.code || '',
       newPassword: pwd,
       message: this.msg(
-        `Đã đặt lại mật khẩu về "${pwd}".`,
+        `Đã cấp lại mật khẩu mới: "${pwd}".`,
         `Password has been reset to "${pwd}".`
       ),
     };

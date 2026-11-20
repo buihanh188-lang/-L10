@@ -22,7 +22,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ArrowLeft, KeyRound, Lock, ShieldAlert } from 'lucide-react';
 import { LanguageProvider, useLanguage, LanguageSwitcher } from './contexts/LanguageContext';
 import {
-  isVerifiedFirebaseUser,
+  ensureAnonymousStudentSession,
+  isCloudSyncEligibleUser,
   subscribeCloudData,
   subscribeFirebaseAuth,
 } from './services/firebase';
@@ -88,7 +89,7 @@ function AppContent() {
         unsubCloud = null;
       }
 
-      if (isVerifiedFirebaseUser(fbUser)) {
+      if (isCloudSyncEligibleUser(fbUser)) {
         apiService.setCloudAuthContext(fbUser);
         unsubCloud = subscribeCloudData(
           fbUser,
@@ -111,6 +112,13 @@ function AppContent() {
       if (unsubCloud) unsubCloud();
     };
   }, []);
+
+  // Automatically initialize silent anonymous Firebase session for active students (no Gmail required)
+  React.useEffect(() => {
+    if (currentUser?.role === 'student') {
+      ensureAnonymousStudentSession().catch(() => {});
+    }
+  }, [currentUser?.id, currentUser?.role]);
 
   // Discreet teacher portal trigger via URL path /admin, query param (?portal=teacher / ?admin=login) or secret shortcut (Alt+Shift+T / Ctrl+Shift+A)
   React.useEffect(() => {

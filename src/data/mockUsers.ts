@@ -2,2852 +2,1195 @@ import { Classroom, ExamRecord, UserProfile } from '../types';
 
 export const REGISTERED_SCHOOLS: { name: string; commune: string; province: string; code: string }[] = [
   {
-    "name": "TRƯỜNG THPT HÒA BÌNH",
-    "commune": "XÃ VẠN LINH",
-    "province": "TỈNH LẠNG SƠN",
-    "code": "THPT-HB"
+    name: 'TRƯỜNG THPT HÒA BÌNH',
+    commune: 'XÃ VẠN LINH',
+    province: 'TỈNH LẠNG SƠN',
+    code: 'THPT-HB',
   },
-  {
-    "name": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
-    "province": "TỈNH LẠNG SƠN",
-    "code": "THPT-CL"
-  },
-  {
-    "name": "TRƯỜNG THPT HỮU LŨNG",
-    "commune": "",
-    "province": "TỈNH LẠNG SƠN",
-    "code": "THPT-HL"
-  }
 ];
 
 export const INITIAL_STUDENTS: UserProfile[] = [
   {
-    "id": "hs-hb-01",
+    "id": "hb-10a1-01",
     "role": "student",
-    "name": "Hoàng Văn Dũng",
-    "code": "HB-1001",
+    "studentType": "official",
+    "name": "Ngô Thị Nguyệt Ánh",
+    "code": "10A1-01",
+    "username": "10a1-01",
     "className": "10A1",
     "school": "TRƯỜNG THPT HÒA BÌNH",
     "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hb-02",
+    "id": "hb-10a1-02",
     "role": "student",
-    "name": "Nông Thị Mai",
-    "code": "HB-1002",
+    "studentType": "official",
+    "name": "Triệu Thị Vân Anh",
+    "code": "10A1-02",
+    "username": "10a1-02",
     "className": "10A1",
     "school": "TRƯỜNG THPT HÒA BÌNH",
     "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hb-03",
+    "id": "hb-10a1-03",
     "role": "student",
-    "name": "Triệu Thị Hoa",
-    "code": "HB-1003",
+    "studentType": "official",
+    "name": "Lương Thị Bảo Châm",
+    "code": "10A1-03",
+    "username": "10a1-03",
     "className": "10A1",
     "school": "TRƯỜNG THPT HÒA BÌNH",
     "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hb-04",
+    "id": "hb-10a1-04",
     "role": "student",
-    "name": "Lăng Thị Lan",
-    "code": "HB-1004",
+    "studentType": "official",
+    "name": "Hoàng Thị Yến Chi",
+    "code": "10A1-04",
+    "username": "10a1-04",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-05",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lương Thị Mỹ Duyên",
+    "code": "10A1-05",
+    "username": "10a1-05",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-06",
+    "role": "student",
+    "studentType": "official",
+    "name": "Triệu Hải Đăng",
+    "code": "10A1-06",
+    "username": "10a1-06",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-07",
+    "role": "student",
+    "studentType": "official",
+    "name": "Trần Đức Hải",
+    "code": "10A1-07",
+    "username": "10a1-07",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-08",
+    "role": "student",
+    "studentType": "official",
+    "name": "Vi Hoàng Hải",
+    "code": "10A1-08",
+    "username": "10a1-08",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-09",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lê Việt Hoàng",
+    "code": "10A1-09",
+    "username": "10a1-09",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-10",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lăng Thuý Hồng",
+    "code": "10A1-10",
+    "username": "10a1-10",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-11",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Mạnh Hùng",
+    "code": "10A1-11",
+    "username": "10a1-11",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-12",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Thu Huyền",
+    "code": "10A1-12",
+    "username": "10a1-12",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-13",
+    "role": "student",
+    "studentType": "official",
+    "name": "Triệu Tuấn Hưng",
+    "code": "10A1-13",
+    "username": "10a1-13",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-14",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Đan Khanh",
+    "code": "10A1-14",
+    "username": "10a1-14",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-15",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Thuý Kiều",
+    "code": "10A1-15",
+    "username": "10a1-15",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-16",
+    "role": "student",
+    "studentType": "official",
+    "name": "Dương Thị Diệu Lan",
+    "code": "10A1-16",
+    "username": "10a1-16",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-17",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Mai Lan",
+    "code": "10A1-17",
+    "username": "10a1-17",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-18",
+    "role": "student",
+    "studentType": "official",
+    "name": "Tô Thị Tâm Lan",
+    "code": "10A1-18",
+    "username": "10a1-18",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-19",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nguyễn Tùng Lâm",
+    "code": "10A1-19",
+    "username": "10a1-19",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-20",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Nhất Lâm",
+    "code": "10A1-20",
+    "username": "10a1-20",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-21",
+    "role": "student",
+    "studentType": "official",
+    "name": "Vi Thanh Luyến",
+    "code": "10A1-21",
+    "username": "10a1-21",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-22",
+    "role": "student",
+    "studentType": "official",
+    "name": "Vi Thị Khánh Ly",
+    "code": "10A1-22",
+    "username": "10a1-22",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-23",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lương Thị Ánh Ngọc",
+    "code": "10A1-23",
+    "username": "10a1-23",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-24",
+    "role": "student",
+    "studentType": "official",
+    "name": "Vi Bảo Ngọc",
+    "code": "10A1-24",
+    "username": "10a1-24",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-25",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nguyễn Thị Ánh Nguyệt",
+    "code": "10A1-25",
+    "username": "10a1-25",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-26",
+    "role": "student",
+    "studentType": "official",
+    "name": "Phùng Thanh Nhiệt",
+    "code": "10A1-26",
+    "username": "10a1-26",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-27",
+    "role": "student",
+    "studentType": "official",
+    "name": "Long Thị Quỳnh Như",
+    "code": "10A1-27",
+    "username": "10a1-27",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-28",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hứa Thị Minh Phương",
+    "code": "10A1-28",
+    "username": "10a1-28",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-29",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Mạnh Quang",
+    "code": "10A1-29",
+    "username": "10a1-29",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-30",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lương Thị Minh Tâm",
+    "code": "10A1-30",
+    "username": "10a1-30",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-31",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lương Diệu Thanh",
+    "code": "10A1-31",
+    "username": "10a1-31",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-32",
+    "role": "student",
+    "studentType": "official",
+    "name": "Dương Mai Thuỳ",
+    "code": "10A1-32",
+    "username": "10a1-32",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-33",
+    "role": "student",
+    "studentType": "official",
+    "name": "Trần Lương Anh Thư",
+    "code": "10A1-33",
+    "username": "10a1-33",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-34",
+    "role": "student",
+    "studentType": "official",
+    "name": "Triệu Minh Thư",
+    "code": "10A1-34",
+    "username": "10a1-34",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-35",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Thị Quỳnh Trâm",
+    "code": "10A1-35",
+    "username": "10a1-35",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-36",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nguyễn Thành Trung",
+    "code": "10A1-36",
+    "username": "10a1-36",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-37",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Phương Vy",
+    "code": "10A1-37",
+    "username": "10a1-37",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a1-38",
+    "role": "student",
+    "studentType": "official",
+    "name": "Vi Thị Kim Xuyến",
+    "code": "10A1-38",
+    "username": "10a1-38",
+    "className": "10A1",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-01",
+    "role": "student",
+    "studentType": "official",
+    "name": "Triệu Ngọc Ánh",
+    "code": "10A2-01",
+    "username": "10a2-01",
     "className": "10A2",
     "school": "TRƯỜNG THPT HÒA BÌNH",
     "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hb-05",
+    "id": "hb-10a2-02",
     "role": "student",
-    "name": "Triệu Văn Khải",
-    "code": "HB-1005",
+    "studentType": "official",
+    "name": "Lê Ngọc Kiều Châm",
+    "code": "10A2-02",
+    "username": "10a2-02",
     "className": "10A2",
     "school": "TRƯỜNG THPT HÒA BÌNH",
     "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hb-06",
+    "id": "hb-10a2-03",
     "role": "student",
-    "name": "Hoàng Minh Tuấn",
-    "code": "HB-1006",
+    "studentType": "official",
+    "name": "Tô Huyền Diệu",
+    "code": "10A2-03",
+    "username": "10a2-03",
     "className": "10A2",
     "school": "TRƯỜNG THPT HÒA BÌNH",
     "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hb-07",
+    "id": "hb-10a2-04",
     "role": "student",
-    "name": "Vy Thu Phương",
-    "code": "HB-1007",
-    "className": "10A3",
-    "school": "TRƯỜNG THPT HÒA BÌNH",
-    "commune": "XÃ VẠN LINH",
-    "province": "TỈNH LẠNG SƠN",
-    "joinedDate": "2026-09-05"
-  },
-  {
-    "id": "hs-hb-08",
-    "role": "student",
-    "name": "Lăng Văn Phúc",
-    "code": "HB-1008",
-    "className": "10A3",
-    "school": "TRƯỜNG THPT HÒA BÌNH",
-    "commune": "XÃ VẠN LINH",
-    "province": "TỈNH LẠNG SƠN",
-    "joinedDate": "2026-09-05"
-  },
-  {
-    "id": "hs-hb-09",
-    "role": "student",
-    "name": "Đặng Thu Trang",
-    "code": "HB-1009",
-    "className": "10A3",
-    "school": "TRƯỜNG THPT HÒA BÌNH",
-    "commune": "XÃ VẠN LINH",
-    "province": "TỈNH LẠNG SƠN",
-    "joinedDate": "2026-09-05"
-  },
-  {
-    "id": "hs-cl-01",
-    "role": "student",
-    "name": "Lương Văn Đạt",
-    "code": "CL-1001",
-    "className": "10A1",
-    "school": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
-    "province": "TỈNH LẠNG SƠN",
-    "joinedDate": "2026-09-05"
-  },
-  {
-    "id": "hs-cl-02",
-    "role": "student",
-    "name": "Nguyễn Thị Bích",
-    "code": "CL-1002",
-    "className": "10A1",
-    "school": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
-    "province": "TỈNH LẠNG SƠN",
-    "joinedDate": "2026-09-05"
-  },
-  {
-    "id": "hs-cl-03",
-    "role": "student",
-    "name": "Hoàng Thị Thu",
-    "code": "CL-1003",
+    "studentType": "official",
+    "name": "Linh Khánh Duy",
+    "code": "10A2-04",
+    "username": "10a2-04",
     "className": "10A2",
-    "school": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-cl-04",
+    "id": "hb-10a2-05",
     "role": "student",
-    "name": "Nông Quốc Việt",
-    "code": "CL-1004",
+    "studentType": "official",
+    "name": "Vi Thị Linh Đan",
+    "code": "10A2-05",
+    "username": "10a2-05",
     "className": "10A2",
-    "school": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-cl-05",
+    "id": "hb-10a2-06",
     "role": "student",
-    "name": "Chu Thị Lan",
-    "code": "CL-1005",
-    "className": "10B1",
-    "school": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
+    "studentType": "official",
+    "name": "Hoàng Hải Đăng",
+    "code": "10A2-06",
+    "username": "10a2-06",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-cl-06",
+    "id": "hb-10a2-07",
     "role": "student",
-    "name": "Triệu Đức Thắng",
-    "code": "CL-1006",
-    "className": "10B1",
-    "school": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
+    "studentType": "official",
+    "name": "Nguyễn Quỳnh Hoa",
+    "code": "10A2-07",
+    "username": "10a2-07",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-cl-07",
+    "id": "hb-10a2-08",
     "role": "student",
-    "name": "Lăng Văn Cường",
-    "code": "CL-1007",
-    "className": "10B1",
-    "school": "TRƯỜNG THPT CHI LĂNG",
-    "commune": "XÃ CHI LĂNG",
+    "studentType": "official",
+    "name": "Hoàng Gia Huy",
+    "code": "10A2-08",
+    "username": "10a2-08",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hl-01",
+    "id": "hb-10a2-09",
     "role": "student",
-    "name": "Đinh Văn Hùng",
-    "code": "HL-1001",
-    "className": "10A1",
-    "school": "TRƯỜNG THPT HỮU LŨNG",
-    "commune": "",
+    "studentType": "official",
+    "name": "Lâm Thị Mai Hương",
+    "code": "10A2-09",
+    "username": "10a2-09",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hl-02",
+    "id": "hb-10a2-10",
     "role": "student",
-    "name": "Mã Thị Nguyệt",
-    "code": "HL-1002",
-    "className": "10A1",
-    "school": "TRƯỜNG THPT HỮU LŨNG",
-    "commune": "",
+    "studentType": "official",
+    "name": "Hoàng Thị Thu Hường",
+    "code": "10A2-10",
+    "username": "10a2-10",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hl-03",
+    "id": "hb-10a2-11",
     "role": "student",
-    "name": "Hoàng Văn Kiên",
-    "code": "HL-1003",
-    "className": "10A4",
-    "school": "TRƯỜNG THPT HỮU LŨNG",
-    "commune": "",
+    "studentType": "official",
+    "name": "Nông Hoàng Anh Khôi",
+    "code": "10A2-11",
+    "username": "10a2-11",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   },
   {
-    "id": "hs-hl-04",
+    "id": "hb-10a2-12",
     "role": "student",
-    "name": "Nguyễn Phương Thảo",
-    "code": "HL-1004",
-    "className": "10A4",
-    "school": "TRƯỜNG THPT HỮU LŨNG",
-    "commune": "",
+    "studentType": "official",
+    "name": "Chu Gia Kiệt",
+    "code": "10A2-12",
+    "username": "10a2-12",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
     "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-13",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hứa Tuệ Lâm",
+    "code": "10A2-13",
+    "username": "10a2-13",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-14",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Thị Khánh Ly",
+    "code": "10A2-14",
+    "username": "10a2-14",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-15",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lục Thị Thuý Nga",
+    "code": "10A2-15",
+    "username": "10a2-15",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-16",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lưu Thị Hằng Nga",
+    "code": "10A2-16",
+    "username": "10a2-16",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-17",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Triệu Yến Nhi",
+    "code": "10A2-17",
+    "username": "10a2-17",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-18",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lý Tâm Như",
+    "code": "10A2-18",
+    "username": "10a2-18",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-19",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Thị Quỳnh Như",
+    "code": "10A2-19",
+    "username": "10a2-19",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-20",
+    "role": "student",
+    "studentType": "official",
+    "name": "Đàm Thiện Phong",
+    "code": "10A2-20",
+    "username": "10a2-20",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-21",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Hồng Phong",
+    "code": "10A2-21",
+    "username": "10a2-21",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-22",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Đình Quân",
+    "code": "10A2-22",
+    "username": "10a2-22",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-23",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Lệ Quyên",
+    "code": "10A2-23",
+    "username": "10a2-23",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-24",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lương Tú Quỳnh",
+    "code": "10A2-24",
+    "username": "10a2-24",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-25",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lương Phương Thanh",
+    "code": "10A2-25",
+    "username": "10a2-25",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-26",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hồ Thị Thuỷ",
+    "code": "10A2-26",
+    "username": "10a2-26",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-27",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hứa Hoàng Anh Thư",
+    "code": "10A2-27",
+    "username": "10a2-27",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-28",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lý Hoài Thương",
+    "code": "10A2-28",
+    "username": "10a2-28",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-29",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Khánh Thy",
+    "code": "10A2-29",
+    "username": "10a2-29",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-30",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Thị Thu Trang",
+    "code": "10A2-30",
+    "username": "10a2-30",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-31",
+    "role": "student",
+    "studentType": "official",
+    "name": "Vi Thị Bảo Trâm",
+    "code": "10A2-31",
+    "username": "10a2-31",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-32",
+    "role": "student",
+    "studentType": "official",
+    "name": "Lâm Hữu Trương",
+    "code": "10A2-32",
+    "username": "10a2-32",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-33",
+    "role": "student",
+    "studentType": "official",
+    "name": "Phạm Anh Tú",
+    "code": "10A2-33",
+    "username": "10a2-33",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-34",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Lý Tường Vi",
+    "code": "10A2-34",
+    "username": "10a2-34",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-35",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Hà Vy",
+    "code": "10A2-35",
+    "username": "10a2-35",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-36",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Phương Vy",
+    "code": "10A2-36",
+    "username": "10a2-36",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-37",
+    "role": "student",
+    "studentType": "official",
+    "name": "Nông Thị Tường Vy",
+    "code": "10A2-37",
+    "username": "10a2-37",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-38",
+    "role": "student",
+    "studentType": "official",
+    "name": "Hoàng Thị Thu Yên",
+    "code": "10A2-38",
+    "username": "10a2-38",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
+    "joinedDate": "2026-09-05"
+  },
+  {
+    "id": "hb-10a2-39",
+    "role": "student",
+    "studentType": "official",
+    "name": "Vi Hải Yến",
+    "code": "10A2-39",
+    "username": "10a2-39",
+    "className": "10A2",
+    "school": "TRƯỜNG THPT HÒA BÌNH",
+    "commune": "XÃ VẠN LINH",
+    "province": "TỈNH LẠNG SƠN",
+    "managedByTeacher": "Bùi Thị Hồng Hạnh",
     "joinedDate": "2026-09-05"
   }
 ];
+
+// Salted SHA-256 hashes of each official student's private 6-character password
+// (zero plaintext passwords stored in client bundle)
+export const OFFICIAL_PASSWORD_HASHES: Record<string, string> = {
+  "10a1-01": "36115bf57828a0f008ee06f298584557d37eb89e4574992cb531e2deb8bfddd2",
+  "10a1-02": "9f279c8a101953f14726c98580d2d0f63dd21514300bac738376981e47908df1",
+  "10a1-03": "bd1fe518ae1d57a7b0ae695cf9e908e583c460826d0aa946b774183ff4a54600",
+  "10a1-04": "7347982b015d626e53257c3b9571d30a5c12773917bbe5620dc33d22934de7b6",
+  "10a1-05": "258f3d20c3c66a58e427b04699e19c430cb7e5babe6382aacb591d64adfda6a9",
+  "10a1-06": "6620bcd2b7b792f62a4d7cac04ac3804d92a32d880bf21a830d7873eaeedc783",
+  "10a1-07": "e1323c7780829ec682b86323817340972132c566a76b0cbeea710885cd9720ff",
+  "10a1-08": "9bf2ceb7addcc02551b2209386552c4c4b243fdaffbbf3e819ef236ba1e28510",
+  "10a1-09": "40c1e6542a8a688687d92a71f0a289d50618a860b97f0e1af7b5a04ce400ea5b",
+  "10a1-10": "8fcf0140270c99732742dbe4fa2ba33368c1c57b6c9f8f469a7db18c5fada682",
+  "10a1-11": "84b2cf959be0c522169792f04d92806eecf25d697d8f4dc9937155e5a9e3ef6e",
+  "10a1-12": "fe9db2066391c5988c3b07b77fcd95e97a8a274d6c4387c16e8d35c81a4b23ca",
+  "10a1-13": "7cc24aa57b0068f2ff58a88bfdf31d82780131a54262225302c05cf258367e91",
+  "10a1-14": "e5d72588edf1d99a271b0b4bbf9c14ef911ffd599a3dded8b5a9bb90bb474292",
+  "10a1-15": "950102b60b3aeed1f16dcf70ccee9df77511951d40da290c77523a4b362791bc",
+  "10a1-16": "e658fe485af9fb854c219c0dc79886ff73cf0d662b50d4751d11b55b8d525bc0",
+  "10a1-17": "f6cb37948fd75a35b422c3563fe78ff276d89f7b8a4907bc4abb3bd79ec80bf4",
+  "10a1-18": "7ddec55798594309c3fb990c0e96a473c0f56367f5f042a4d6aeb588646f52a4",
+  "10a1-19": "3703ae69cf7cdedc850fb42673e3ceb102fbac0534ecdeb8b6135ec79bb713c5",
+  "10a1-20": "bd3b98074ccd327da31cbe23b8c8479b87d93d6b8e4f7f1e0fac2d12eb439de6",
+  "10a1-21": "977729f529274f9401a622d70c19f2dd6103db89db1ad78a50ededfcb0d3ba8b",
+  "10a1-22": "5d11c63ad53c94691cf411b37bcee945a79e3e6e32dc1e53bcd127a60481f95e",
+  "10a1-23": "6f5d76b57503800dc06729eb5cb31d5c09f42c1c73c4db10087035ca7148a318",
+  "10a1-24": "f4d671d0d8c005112b35d95ed98992542bf8e93bc336ae028e0759d4ef3423a7",
+  "10a1-25": "0997237200a869f9cb49340ec40ea31af6d503cbdf94e01bdb366212ce9f2bed",
+  "10a1-26": "485e481697417a2ab2bb696e8b120d36600cd327093568f310d442fa03a2e8f6",
+  "10a1-27": "1c184f65d9f7585f9ed862792e666f351309df6cbd7ad0c8345d24b7aba3fbcf",
+  "10a1-28": "63bab8071769d55aec862aed2fd488859ee2412ef988e851797e31fb769a2412",
+  "10a1-29": "2fa7bab3df63f983eae85b5f6509aba6b28a8a1bd9fdc8bcbf20bc8a8f7ed79c",
+  "10a1-30": "a8115e6537182d01b4cf12d25f38690dea25dba0ea34841807de8bc94469e196",
+  "10a1-31": "ce4b3689cecbfee36dd4a5cad061e7dc1c0321018052dbef7496300a2ff8b483",
+  "10a1-32": "0b1c57bba0055edd10181f871bd17a4de04ff47c3da9467335c3d4c8580bce8c",
+  "10a1-33": "28b85d0ba03c4d9e32172a8e421e74d9ba1a008a94fd3253f797810275c89b40",
+  "10a1-34": "a741c60649e1ea0592939da0495f4e17b556bbc6f33f3ceb6f4e17f1b43d8afa",
+  "10a1-35": "5ce09ee6445c23195a6fd6e2a07b4b49e972571cfe44fc76e882f0affe4db8a8",
+  "10a1-36": "1dffbcc8b3ccdf48b4af6ba7ffeb79360c56e3902ce36c10495c0335597f2652",
+  "10a1-37": "8d404d3d3f18d575660768be7ff1b1347a695d8045b50f9b5ca6b3ea67c5c33b",
+  "10a1-38": "0481d60a50fcc4fcfe7bcd2022c200fdf0bdd7b1f2992fc16c2d191ae7caf2fb",
+  "10a2-01": "24c5a1a8706ba2720e2ae21d89493bd819a5549c7874709af96df9ac2405797e",
+  "10a2-02": "6b55141f9daee9474019b9323f1fd125f6e48693669deaf85bdd90319572f84d",
+  "10a2-03": "49872276e125c31530a7ccf232967fe5c740f01c2ccadb51bfe4144ab91affc4",
+  "10a2-04": "831eb869cd04398b3ef88b5222d8bfc4a673d9798d58a01b3bca3b932171b0c5",
+  "10a2-05": "d974aef2a71f6df1c9191365d7056f273f893a0e88d9e0c81c5968c1992219a8",
+  "10a2-06": "a0127bebc33d9d495b9794e611132a3e3956f61c8dc76057c1240205b77f2eb5",
+  "10a2-07": "4592d615ba06b313521366baf71c17573b2953af93ea11085fec413c847ee1b9",
+  "10a2-08": "7cbc23b174a83066876f2fa3e46d3a847ea53c33dee445853fcb63ea015da349",
+  "10a2-09": "2552e1557a885d245744dd6a948f789deda9371585eaacd50477b9f49e3da11c",
+  "10a2-10": "16a502e26b01c935dc5486703a3c17e0fd8c028d60714569b9d5a2887e833e81",
+  "10a2-11": "5a7623c1ffaceb71e58af89f951f404d7fbb0ee656bebdaca5b438d1d657deb6",
+  "10a2-12": "1df84f4085aba5d7dadeae1f2d8a2ef48c6193c7ae3657ebc9b5ff4e65c52be8",
+  "10a2-13": "39486a08fedd54af10efc3432bb43bba8336159567c0fc93af5301e1146db739",
+  "10a2-14": "81455c8dade83e7c8bed79bf12fd0159ac61a58dd9363b205a9bab3482a54f32",
+  "10a2-15": "59aa74eb2e696e4c23fbf74a7a073351b77aa54b02d0b9a17a580fd1cb48c3c9",
+  "10a2-16": "c2c2f213c26bc2e8dae7543922213c88f4b9aabb4a1e200e7759762aef8fcadb",
+  "10a2-17": "f69da87acc57fc15f7298c6348cac016b5f0ebfd6188bac05ea47624258b282a",
+  "10a2-18": "5a0dc359deabd0142d50ecc8b432abfa10e0024bc7fb007a757fa6223c254aba",
+  "10a2-19": "daf2ee78aa5a6ea466a51190000b31f4e1e63b7fa968b37a41b0c7a29013a777",
+  "10a2-20": "4e5eabd2c363cd7efaea715ba8a47597ff2d77f2a24f91d4630bea5e72c8cb95",
+  "10a2-21": "b15cb5fd40925c57eb7f730b94aa2bb0c8c6b8948b55063cd1fa3e42ba82a4b3",
+  "10a2-22": "14ca0162391d3c3da6112bbaf94e3a06f4081fce26170c1276d2d0f2f3ad4041",
+  "10a2-23": "b74337d0eddbcba47ac9ca264340dc40ee0d1b2ea726c9fff001d46e74f98cb2",
+  "10a2-24": "8ed76c40a02ad42a46150b51347fc70e19120a46b0ac0b8be85fd12beabe90f6",
+  "10a2-25": "fcb9147adb489a6fca7ac7eb82767823c1a321507a1153139b577c84f9f7c6ff",
+  "10a2-26": "2f2208b73aa4e3e338c79dfbfb552a8a86d493f3be8feb652e0b29b07a9a9ecb",
+  "10a2-27": "879432e4d1621326eddedec8aecf72efd1b61af92b377bc64f88c1d97228ee6c",
+  "10a2-28": "3587cf3836d7461ad2b8050eba6ecbf409f804818128b7d92b66a645c0b169d8",
+  "10a2-29": "7189ad9c730c4d7c2f1e3ec804b61ae1d4d5644689f943617e0ac283800dfb84",
+  "10a2-30": "a0f76a532370b97d71e912d73a27dc7b2d29fb9b9112f04e829abc94bd9c6b83",
+  "10a2-31": "5abbd7c1e5ed33478c22aeb10b6e25247c6d5d7a6a4a674c306eae5cd19f1941",
+  "10a2-32": "0da066494a31e360dd56a92f273aaa8e225387a8b159b1ccaff01ccb0865f516",
+  "10a2-33": "fb7b80881f0913c4a1fe54896f1fa2f35fabe39add18560efeb1feb2d5c68729",
+  "10a2-34": "79ef8cbc26bf2fb34d5d5d010ce6ebe130ad575ca06b5145a4f8dfbf53276110",
+  "10a2-35": "17a093b7692b627211c4eefe1a5575449990f0c4bc1cc8dd6a51ac46738d1072",
+  "10a2-36": "cfd77d99090335ef343fc85c3de68c26159b4de8007c38a21d5b0585e6605988",
+  "10a2-37": "2836599e42eeb72839e3099aeb7cc755f21199946c48d5673668d0f99c494d75",
+  "10a2-38": "c5aab3c12f7931f0532cec41e19047c6a36cdcf6224c021ec07b3f4120f7b626",
+  "10a2-39": "30b540ebfd83c2664823fbc0c67a52455c25de630e3be48e8a5ac64fbd43b9c9"
+};
 
 export const INITIAL_CLASSES: Classroom[] = [
   {
-    "id": "class-hb-10a1",
-    "name": "10A1",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "teacherName": "Bùi Thị Hồng Hạnh",
-    "joinCode": "HB10A1",
-    "studentCount": 38,
-    "academicYear": "2026 - 2027"
+    id: 'class-hb-10a1',
+    name: '10A1',
+    schoolName: 'TRƯỜNG THPT HÒA BÌNH',
+    teacherName: 'Bùi Thị Hồng Hạnh',
+    joinCode: 'HB10A1',
+    studentCount: 38,
+    academicYear: '2026 - 2027',
   },
   {
-    "id": "class-hb-10a2",
-    "name": "10A2",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "teacherName": "Bùi Thị Hồng Hạnh",
-    "joinCode": "HB10A2",
-    "studentCount": 40,
-    "academicYear": "2026 - 2027"
+    id: 'class-hb-10a2',
+    name: '10A2',
+    schoolName: 'TRƯỜNG THPT HÒA BÌNH',
+    teacherName: 'Bùi Thị Hồng Hạnh',
+    joinCode: 'HB10A2',
+    studentCount: 39,
+    academicYear: '2026 - 2027',
   },
-  {
-    "id": "class-hb-10a3",
-    "name": "10A3",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "teacherName": "Bùi Thị Hồng Hạnh",
-    "joinCode": "HB10A3",
-    "studentCount": 36,
-    "academicYear": "2026 - 2027"
-  },
-  {
-    "id": "class-cl-10a1",
-    "name": "10A1",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "teacherName": "Trần Văn Nam",
-    "joinCode": "CL10A1",
-    "studentCount": 39,
-    "academicYear": "2026 - 2027"
-  },
-  {
-    "id": "class-cl-10a2",
-    "name": "10A2",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "teacherName": "Trần Văn Nam",
-    "joinCode": "CL10A2",
-    "studentCount": 37,
-    "academicYear": "2026 - 2027"
-  },
-  {
-    "id": "class-cl-10b1",
-    "name": "10B1",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "teacherName": "Nguyễn Thị Loan",
-    "joinCode": "CL10B1",
-    "studentCount": 42,
-    "academicYear": "2026 - 2027"
-  },
-  {
-    "id": "class-hl-10a1",
-    "name": "10A1",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "teacherName": "Lê Văn Hưng",
-    "joinCode": "HL10A1",
-    "studentCount": 41,
-    "academicYear": "2026 - 2027"
-  },
-  {
-    "id": "class-hl-10a4",
-    "name": "10A4",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "teacherName": "Lê Văn Hưng",
-    "joinCode": "HL10A4",
-    "studentCount": 38,
-    "academicYear": "2026 - 2027"
-  }
 ];
 
-export const INITIAL_EXAM_RECORDS: ExamRecord[] = [
-  {
-    "id": "rec-hb-001",
-    "studentId": "hs-hb-01",
-    "studentName": "Hoàng Văn Dũng",
-    "studentCode": "HB-1001",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793538861115,
-    "durationSeconds": 721,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-002",
-    "studentId": "hs-hb-01",
-    "studentName": "Hoàng Văn Dũng",
-    "studentCode": "HB-1001",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793362461115,
-    "durationSeconds": 2702,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-003",
-    "studentId": "hs-hb-01",
-    "studentName": "Hoàng Văn Dũng",
-    "studentCode": "HB-1001",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793099661115,
-    "durationSeconds": 903,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-004",
-    "studentId": "hs-hb-01",
-    "studentName": "Hoàng Văn Dũng",
-    "studentCode": "HB-1001",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-7",
-    "lessonTitle": "Bài 7. Tác động của nội lực và ngoại lực đến địa hình bề mặt Trái Đất",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 7. Tác động của nội lực và ngoại lực đến địa hình bề mặt Trái Đất",
-    "mode": "official_test",
-    "timestamp": 1792577661115,
-    "durationSeconds": 1504,
-    "timeLimitMinutes": 25,
-    "totalQuestions": 20,
-    "score": 9.5,
-    "correctCount": 19,
-    "wrongCount": 1,
-    "accuracyRate": 95.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 8,
-        "correct": 7
-      },
-      "true_false_context": {
-        "total": 4,
-        "correct": 3
-      },
-      "short_answer": {
-        "total": 4,
-        "correct": 3
-      },
-      "matching": {
-        "total": 4,
-        "correct": 3
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-7"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-005",
-    "studentId": "hs-hb-02",
-    "studentName": "Nông Thị Mai",
-    "studentCode": "HB-1002",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793524461115,
-    "durationSeconds": 725,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-006",
-    "studentId": "hs-hb-02",
-    "studentName": "Nông Thị Mai",
-    "studentCode": "HB-1002",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793348061115,
-    "durationSeconds": 2706,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-007",
-    "studentId": "hs-hb-02",
-    "studentName": "Nông Thị Mai",
-    "studentCode": "HB-1002",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793085261115,
-    "durationSeconds": 907,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-008",
-    "studentId": "hs-hb-02",
-    "studentName": "Nông Thị Mai",
-    "studentCode": "HB-1002",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-7",
-    "lessonTitle": "Bài 7. Tác động của nội lực và ngoại lực đến địa hình bề mặt Trái Đất",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 7. Tác động của nội lực và ngoại lực đến địa hình bề mặt Trái Đất",
-    "mode": "official_test",
-    "timestamp": 1792563261115,
-    "durationSeconds": 1508,
-    "timeLimitMinutes": 25,
-    "totalQuestions": 20,
-    "score": 9.5,
-    "correctCount": 19,
-    "wrongCount": 1,
-    "accuracyRate": 95.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 8,
-        "correct": 7
-      },
-      "true_false_context": {
-        "total": 4,
-        "correct": 3
-      },
-      "short_answer": {
-        "total": 4,
-        "correct": 3
-      },
-      "matching": {
-        "total": 4,
-        "correct": 3
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-7"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-009",
-    "studentId": "hs-hb-03",
-    "studentName": "Triệu Thị Hoa",
-    "studentCode": "HB-1003",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793510061115,
-    "durationSeconds": 729,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-010",
-    "studentId": "hs-hb-03",
-    "studentName": "Triệu Thị Hoa",
-    "studentCode": "HB-1003",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793333661115,
-    "durationSeconds": 2710,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-011",
-    "studentId": "hs-hb-03",
-    "studentName": "Triệu Thị Hoa",
-    "studentCode": "HB-1003",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A1",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793070861115,
-    "durationSeconds": 911,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-012",
-    "studentId": "hs-hb-04",
-    "studentName": "Lăng Thị Lan",
-    "studentCode": "HB-1004",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793499261115,
-    "durationSeconds": 732,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-013",
-    "studentId": "hs-hb-04",
-    "studentName": "Lăng Thị Lan",
-    "studentCode": "HB-1004",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793322861115,
-    "durationSeconds": 2713,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-014",
-    "studentId": "hs-hb-04",
-    "studentName": "Lăng Thị Lan",
-    "studentCode": "HB-1004",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793060061115,
-    "durationSeconds": 914,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-015",
-    "studentId": "hs-hb-04",
-    "studentName": "Lăng Thị Lan",
-    "studentCode": "HB-1004",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-7",
-    "lessonTitle": "Bài 7. Tác động của nội lực và ngoại lực đến địa hình bề mặt Trái Đất",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 7. Tác động của nội lực và ngoại lực đến địa hình bề mặt Trái Đất",
-    "mode": "official_test",
-    "timestamp": 1792538061115,
-    "durationSeconds": 1515,
-    "timeLimitMinutes": 25,
-    "totalQuestions": 20,
-    "score": 9.5,
-    "correctCount": 19,
-    "wrongCount": 1,
-    "accuracyRate": 95.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 8,
-        "correct": 7
-      },
-      "true_false_context": {
-        "total": 4,
-        "correct": 3
-      },
-      "short_answer": {
-        "total": 4,
-        "correct": 3
-      },
-      "matching": {
-        "total": 4,
-        "correct": 3
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-7"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-016",
-    "studentId": "hs-hb-05",
-    "studentName": "Triệu Văn Khải",
-    "studentCode": "HB-1005",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793484861115,
-    "durationSeconds": 736,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-017",
-    "studentId": "hs-hb-05",
-    "studentName": "Triệu Văn Khải",
-    "studentCode": "HB-1005",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793308461115,
-    "durationSeconds": 2717,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-018",
-    "studentId": "hs-hb-05",
-    "studentName": "Triệu Văn Khải",
-    "studentCode": "HB-1005",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793045661115,
-    "durationSeconds": 918,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-019",
-    "studentId": "hs-hb-06",
-    "studentName": "Hoàng Minh Tuấn",
-    "studentCode": "HB-1006",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793474061115,
-    "durationSeconds": 739,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-020",
-    "studentId": "hs-hb-06",
-    "studentName": "Hoàng Minh Tuấn",
-    "studentCode": "HB-1006",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793297661115,
-    "durationSeconds": 2720,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-021",
-    "studentId": "hs-hb-06",
-    "studentName": "Hoàng Minh Tuấn",
-    "studentCode": "HB-1006",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A2",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793034861115,
-    "durationSeconds": 921,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-022",
-    "studentId": "hs-hb-07",
-    "studentName": "Vy Thu Phương",
-    "studentCode": "HB-1007",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793463261115,
-    "durationSeconds": 742,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-023",
-    "studentId": "hs-hb-07",
-    "studentName": "Vy Thu Phương",
-    "studentCode": "HB-1007",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793286861115,
-    "durationSeconds": 2723,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-024",
-    "studentId": "hs-hb-07",
-    "studentName": "Vy Thu Phương",
-    "studentCode": "HB-1007",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793024061115,
-    "durationSeconds": 924,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-025",
-    "studentId": "hs-hb-08",
-    "studentName": "Lăng Văn Phúc",
-    "studentCode": "HB-1008",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793452461115,
-    "durationSeconds": 745,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-026",
-    "studentId": "hs-hb-08",
-    "studentName": "Lăng Văn Phúc",
-    "studentCode": "HB-1008",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793276061115,
-    "durationSeconds": 2726,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-027",
-    "studentId": "hs-hb-08",
-    "studentName": "Lăng Văn Phúc",
-    "studentCode": "HB-1008",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793013261115,
-    "durationSeconds": 927,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-028",
-    "studentId": "hs-hb-09",
-    "studentName": "Đặng Thu Trang",
-    "studentCode": "HB-1009",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-1",
-    "lessonTitle": "Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 1. Môn Địa lí với định hướng nghề nghiệp",
-    "mode": "official_test",
-    "timestamp": 1793441661115,
-    "durationSeconds": 748,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.5,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-1"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-029",
-    "studentId": "hs-hb-09",
-    "studentName": "Đặng Thu Trang",
-    "studentCode": "HB-1009",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "practice_topic",
-    "timestamp": 1793265261115,
-    "durationSeconds": 2729,
-    "timeLimitMinutes": 45,
-    "totalQuestions": 40,
-    "score": 9.0,
-    "correctCount": 36,
-    "wrongCount": 4,
-    "accuracyRate": 90.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 14
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 7
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 7
-      },
-      "matching": {
-        "total": 8,
-        "correct": 7
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-hb-030",
-    "studentId": "hs-hb-09",
-    "studentName": "Đặng Thu Trang",
-    "studentCode": "HB-1009",
-    "schoolName": "TRƯỜNG THPT HÒA BÌNH",
-    "className": "10A3",
-    "lessonId": "bai-4",
-    "lessonTitle": "Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "questionType": "short_answer",
-    "title": "Luyện tập: Bài 4. Sự hình thành Trái Đất, vỏ Trái Đất và vật liệu cấu tạo vỏ Trái Đất",
-    "mode": "practice_type",
-    "timestamp": 1793002461115,
-    "durationSeconds": 900,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-4"
-    ],
-    "recommendation": "Tiếp tục phát huy kết quả học tập tốt môn Địa lí 10."
-  },
-  {
-    "id": "rec-cl-031",
-    "studentId": "hs-cl-01",
-    "studentName": "Lương Văn Đạt",
-    "studentCode": "CL-1001",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "official_test",
-    "timestamp": 1793344461115,
-    "durationSeconds": 871,
-    "timeLimitMinutes": 14,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-032",
-    "studentId": "hs-cl-01",
-    "studentName": "Lương Văn Đạt",
-    "studentCode": "CL-1001",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A1",
-    "lessonId": "bai-5",
-    "lessonTitle": "Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "mode": "practice_topic",
-    "timestamp": 1793081661115,
-    "durationSeconds": 2432,
-    "timeLimitMinutes": 40,
-    "totalQuestions": 40,
-    "score": 8.5,
-    "correctCount": 34,
-    "wrongCount": 6,
-    "accuracyRate": 85.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 13
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 6
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 6
-      },
-      "matching": {
-        "total": 8,
-        "correct": 6
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-5"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-033",
-    "studentId": "hs-cl-01",
-    "studentName": "Lương Văn Đạt",
-    "studentCode": "CL-1001",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A1",
-    "lessonId": "bai-33",
-    "lessonTitle": "Bài 33. Cơ cấu, vai trò, đặc điểm và các nhân tố ảnh hưởng đến phát triển ngành dịch vụ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 33. Cơ cấu, vai trò, đặc điểm và các nhân tố ảnh hưởng đến phát triển ngành dịch vụ",
-    "mode": "official_test",
-    "timestamp": 1792646061115,
-    "durationSeconds": 1233,
-    "timeLimitMinutes": 20,
-    "totalQuestions": 15,
-    "score": 9.0,
-    "correctCount": 14,
-    "wrongCount": 1,
-    "accuracyRate": 93.3,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 6,
-        "correct": 5
-      },
-      "true_false_context": {
-        "total": 3,
-        "correct": 2
-      },
-      "short_answer": {
-        "total": 3,
-        "correct": 2
-      },
-      "matching": {
-        "total": 3,
-        "correct": 2
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-33"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-034",
-    "studentId": "hs-cl-02",
-    "studentName": "Nguyễn Thị Bích",
-    "studentCode": "CL-1002",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "official_test",
-    "timestamp": 1793333661115,
-    "durationSeconds": 874,
-    "timeLimitMinutes": 14,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-035",
-    "studentId": "hs-cl-02",
-    "studentName": "Nguyễn Thị Bích",
-    "studentCode": "CL-1002",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A1",
-    "lessonId": "bai-5",
-    "lessonTitle": "Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "mode": "practice_topic",
-    "timestamp": 1793070861115,
-    "durationSeconds": 2435,
-    "timeLimitMinutes": 40,
-    "totalQuestions": 40,
-    "score": 8.5,
-    "correctCount": 34,
-    "wrongCount": 6,
-    "accuracyRate": 85.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 13
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 6
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 6
-      },
-      "matching": {
-        "total": 8,
-        "correct": 6
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-5"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-036",
-    "studentId": "hs-cl-03",
-    "studentName": "Hoàng Thị Thu",
-    "studentCode": "CL-1003",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A2",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "official_test",
-    "timestamp": 1793326461115,
-    "durationSeconds": 876,
-    "timeLimitMinutes": 14,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-037",
-    "studentId": "hs-cl-03",
-    "studentName": "Hoàng Thị Thu",
-    "studentCode": "CL-1003",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A2",
-    "lessonId": "bai-5",
-    "lessonTitle": "Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "mode": "practice_topic",
-    "timestamp": 1793063661115,
-    "durationSeconds": 2437,
-    "timeLimitMinutes": 40,
-    "totalQuestions": 40,
-    "score": 8.5,
-    "correctCount": 34,
-    "wrongCount": 6,
-    "accuracyRate": 85.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 13
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 6
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 6
-      },
-      "matching": {
-        "total": 8,
-        "correct": 6
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-5"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-038",
-    "studentId": "hs-cl-03",
-    "studentName": "Hoàng Thị Thu",
-    "studentCode": "CL-1003",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A2",
-    "lessonId": "bai-33",
-    "lessonTitle": "Bài 33. Cơ cấu, vai trò, đặc điểm và các nhân tố ảnh hưởng đến phát triển ngành dịch vụ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 33. Cơ cấu, vai trò, đặc điểm và các nhân tố ảnh hưởng đến phát triển ngành dịch vụ",
-    "mode": "official_test",
-    "timestamp": 1792628061115,
-    "durationSeconds": 1238,
-    "timeLimitMinutes": 20,
-    "totalQuestions": 15,
-    "score": 9.0,
-    "correctCount": 14,
-    "wrongCount": 1,
-    "accuracyRate": 93.3,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 6,
-        "correct": 5
-      },
-      "true_false_context": {
-        "total": 3,
-        "correct": 2
-      },
-      "short_answer": {
-        "total": 3,
-        "correct": 2
-      },
-      "matching": {
-        "total": 3,
-        "correct": 2
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-33"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-039",
-    "studentId": "hs-cl-04",
-    "studentName": "Nông Quốc Việt",
-    "studentCode": "CL-1004",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A2",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "official_test",
-    "timestamp": 1793315661115,
-    "durationSeconds": 879,
-    "timeLimitMinutes": 14,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-040",
-    "studentId": "hs-cl-04",
-    "studentName": "Nông Quốc Việt",
-    "studentCode": "CL-1004",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10A2",
-    "lessonId": "bai-5",
-    "lessonTitle": "Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "mode": "practice_topic",
-    "timestamp": 1793052861115,
-    "durationSeconds": 2440,
-    "timeLimitMinutes": 40,
-    "totalQuestions": 40,
-    "score": 8.5,
-    "correctCount": 34,
-    "wrongCount": 6,
-    "accuracyRate": 85.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 13
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 6
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 6
-      },
-      "matching": {
-        "total": 8,
-        "correct": 6
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-5"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-041",
-    "studentId": "hs-cl-05",
-    "studentName": "Chu Thị Lan",
-    "studentCode": "CL-1005",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10B1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "official_test",
-    "timestamp": 1793308461115,
-    "durationSeconds": 881,
-    "timeLimitMinutes": 14,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-042",
-    "studentId": "hs-cl-05",
-    "studentName": "Chu Thị Lan",
-    "studentCode": "CL-1005",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10B1",
-    "lessonId": "bai-5",
-    "lessonTitle": "Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "mode": "practice_topic",
-    "timestamp": 1793045661115,
-    "durationSeconds": 2442,
-    "timeLimitMinutes": 40,
-    "totalQuestions": 40,
-    "score": 8.5,
-    "correctCount": 34,
-    "wrongCount": 6,
-    "accuracyRate": 85.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 13
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 6
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 6
-      },
-      "matching": {
-        "total": 8,
-        "correct": 6
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-5"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-043",
-    "studentId": "hs-cl-05",
-    "studentName": "Chu Thị Lan",
-    "studentCode": "CL-1005",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10B1",
-    "lessonId": "bai-33",
-    "lessonTitle": "Bài 33. Cơ cấu, vai trò, đặc điểm và các nhân tố ảnh hưởng đến phát triển ngành dịch vụ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 33. Cơ cấu, vai trò, đặc điểm và các nhân tố ảnh hưởng đến phát triển ngành dịch vụ",
-    "mode": "official_test",
-    "timestamp": 1792610061115,
-    "durationSeconds": 1243,
-    "timeLimitMinutes": 20,
-    "totalQuestions": 15,
-    "score": 9.0,
-    "correctCount": 14,
-    "wrongCount": 1,
-    "accuracyRate": 93.3,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 6,
-        "correct": 5
-      },
-      "true_false_context": {
-        "total": 3,
-        "correct": 2
-      },
-      "short_answer": {
-        "total": 3,
-        "correct": 2
-      },
-      "matching": {
-        "total": 3,
-        "correct": 2
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-33"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-044",
-    "studentId": "hs-cl-06",
-    "studentName": "Triệu Đức Thắng",
-    "studentCode": "CL-1006",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10B1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "official_test",
-    "timestamp": 1793297661115,
-    "durationSeconds": 884,
-    "timeLimitMinutes": 14,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-045",
-    "studentId": "hs-cl-06",
-    "studentName": "Triệu Đức Thắng",
-    "studentCode": "CL-1006",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10B1",
-    "lessonId": "bai-5",
-    "lessonTitle": "Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "mode": "practice_topic",
-    "timestamp": 1793034861115,
-    "durationSeconds": 2400,
-    "timeLimitMinutes": 40,
-    "totalQuestions": 40,
-    "score": 8.5,
-    "correctCount": 34,
-    "wrongCount": 6,
-    "accuracyRate": 85.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 13
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 6
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 6
-      },
-      "matching": {
-        "total": 8,
-        "correct": 6
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-5"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-046",
-    "studentId": "hs-cl-07",
-    "studentName": "Lăng Văn Cường",
-    "studentCode": "CL-1007",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10B1",
-    "lessonId": "bai-2",
-    "lessonTitle": "Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 2. Phương pháp biểu hiện các đối tượng địa lí trên bản đồ",
-    "mode": "official_test",
-    "timestamp": 1793290461115,
-    "durationSeconds": 841,
-    "timeLimitMinutes": 14,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-2"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-cl-047",
-    "studentId": "hs-cl-07",
-    "studentName": "Lăng Văn Cường",
-    "studentCode": "CL-1007",
-    "schoolName": "TRƯỜNG THPT CHI LĂNG",
-    "className": "10B1",
-    "lessonId": "bai-5",
-    "lessonTitle": "Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "questionType": "all",
-    "title": "Luyện tập: Bài 5. Hệ quả địa lí các chuyển động của Trái Đất",
-    "mode": "practice_topic",
-    "timestamp": 1793027661115,
-    "durationSeconds": 2402,
-    "timeLimitMinutes": 40,
-    "totalQuestions": 40,
-    "score": 8.5,
-    "correctCount": 34,
-    "wrongCount": 6,
-    "accuracyRate": 85.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 16,
-        "correct": 13
-      },
-      "true_false_context": {
-        "total": 8,
-        "correct": 6
-      },
-      "short_answer": {
-        "total": 8,
-        "correct": 6
-      },
-      "matching": {
-        "total": 8,
-        "correct": 6
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-5"
-    ],
-    "recommendation": "Rèn luyện thêm bài tập tính toán tỉ trọng và tốc độ tăng trưởng."
-  },
-  {
-    "id": "rec-hl-048",
-    "studentId": "hs-hl-01",
-    "studentName": "Đinh Văn Hùng",
-    "studentCode": "HL-1001",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A1",
-    "lessonId": "bai-3",
-    "lessonTitle": "Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "mode": "official_test",
-    "timestamp": 1793196861115,
-    "durationSeconds": 918,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 7.5,
-    "correctCount": 7,
-    "wrongCount": 3,
-    "accuracyRate": 70.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 2
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-3"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  },
-  {
-    "id": "rec-hl-049",
-    "studentId": "hs-hl-01",
-    "studentName": "Đinh Văn Hùng",
-    "studentCode": "HL-1001",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A1",
-    "lessonId": "bai-6",
-    "lessonTitle": "Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "questionType": "multiple_choice",
-    "title": "Luyện tập: Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "mode": "practice_type",
-    "timestamp": 1792761261115,
-    "durationSeconds": 739,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-6"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  },
-  {
-    "id": "rec-hl-050",
-    "studentId": "hs-hl-02",
-    "studentName": "Mã Thị Nguyệt",
-    "studentCode": "HL-1002",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A1",
-    "lessonId": "bai-3",
-    "lessonTitle": "Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "mode": "official_test",
-    "timestamp": 1793189661115,
-    "durationSeconds": 920,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 7.5,
-    "correctCount": 7,
-    "wrongCount": 3,
-    "accuracyRate": 70.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 2
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-3"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  },
-  {
-    "id": "rec-hl-051",
-    "studentId": "hs-hl-02",
-    "studentName": "Mã Thị Nguyệt",
-    "studentCode": "HL-1002",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A1",
-    "lessonId": "bai-6",
-    "lessonTitle": "Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "questionType": "multiple_choice",
-    "title": "Luyện tập: Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "mode": "practice_type",
-    "timestamp": 1792754061115,
-    "durationSeconds": 741,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-6"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  },
-  {
-    "id": "rec-hl-052",
-    "studentId": "hs-hl-03",
-    "studentName": "Hoàng Văn Kiên",
-    "studentCode": "HL-1003",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A4",
-    "lessonId": "bai-3",
-    "lessonTitle": "Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "mode": "official_test",
-    "timestamp": 1793182461115,
-    "durationSeconds": 922,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 7.5,
-    "correctCount": 7,
-    "wrongCount": 3,
-    "accuracyRate": 70.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 2
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-3"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  },
-  {
-    "id": "rec-hl-053",
-    "studentId": "hs-hl-03",
-    "studentName": "Hoàng Văn Kiên",
-    "studentCode": "HL-1003",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A4",
-    "lessonId": "bai-6",
-    "lessonTitle": "Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "questionType": "multiple_choice",
-    "title": "Luyện tập: Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "mode": "practice_type",
-    "timestamp": 1792746861115,
-    "durationSeconds": 743,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-6"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  },
-  {
-    "id": "rec-hl-054",
-    "studentId": "hs-hl-04",
-    "studentName": "Nguyễn Phương Thảo",
-    "studentCode": "HL-1004",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A4",
-    "lessonId": "bai-3",
-    "lessonTitle": "Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "questionType": "all",
-    "title": "Kiểm tra đánh giá: Bài 3. Sử dụng bản đồ trong học tập và đời sống, một số ứng dụng của GPS và bản đồ số",
-    "mode": "official_test",
-    "timestamp": 1793175261115,
-    "durationSeconds": 924,
-    "timeLimitMinutes": 15,
-    "totalQuestions": 10,
-    "score": 7.5,
-    "correctCount": 7,
-    "wrongCount": 3,
-    "accuracyRate": 70.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 2
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-3"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  },
-  {
-    "id": "rec-hl-055",
-    "studentId": "hs-hl-04",
-    "studentName": "Nguyễn Phương Thảo",
-    "studentCode": "HL-1004",
-    "schoolName": "TRƯỜNG THPT HỮU LŨNG",
-    "className": "10A4",
-    "lessonId": "bai-6",
-    "lessonTitle": "Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "questionType": "multiple_choice",
-    "title": "Luyện tập: Bài 6. Thạch quyển, thuyết kiến tạo mảng",
-    "mode": "practice_type",
-    "timestamp": 1792739661115,
-    "durationSeconds": 745,
-    "timeLimitMinutes": 12,
-    "totalQuestions": 10,
-    "score": 8.0,
-    "correctCount": 8,
-    "wrongCount": 2,
-    "accuracyRate": 80.0,
-    "details": [],
-    "topicBreakdown": {},
-    "typeBreakdown": {
-      "multiple_choice": {
-        "total": 4,
-        "correct": 3
-      },
-      "true_false_context": {
-        "total": 2,
-        "correct": 1
-      },
-      "short_answer": {
-        "total": 2,
-        "correct": 1
-      },
-      "matching": {
-        "total": 2,
-        "correct": 1
-      }
-    },
-    "weakTopics": [],
-    "strongTopics": [
-      "bai-6"
-    ],
-    "recommendation": "Củng cố thêm kiến thức bản đồ và định vị GPS."
-  }
-];
+export const INITIAL_EXAM_RECORDS: ExamRecord[] = [];

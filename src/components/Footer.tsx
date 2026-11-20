@@ -1,9 +1,9 @@
 import React from 'react';
-import { BookOpen, Globe2, Heart, Lock, Mail, MapPin, School, ShieldCheck } from 'lucide-react';
+import { BookOpen, Heart, Mail, MapPin, School, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export const Footer: React.FC = () => {
-  const { language, t } = useLanguage();
+  const { language } = useLanguage();
   const isEn = language === 'en';
 
   return (
@@ -84,20 +84,6 @@ export const Footer: React.FC = () => {
               <div className="flex items-center space-x-1.5 text-[11px] text-slate-400 pt-1">
                 <Mail className="w-3 h-3 text-slate-400" />
                 <span>buihanh188@gmail.com</span>
-              </div>
-              <div className="pt-2">
-                <a
-                  href="/admin"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    window.location.href = window.location.origin + '/admin';
-                  }}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-400/30 text-xs font-bold transition-all cursor-pointer shadow-xs"
-                  title={isEn ? 'Open Teacher Admin Portal' : 'Mở Cổng Quản Trị Giáo Viên'}
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>{isEn ? 'Teacher Admin Portal' : 'Cổng Quản Trị Giáo Viên'}</span>
-                </a>
               </div>
             </div>
           </div>

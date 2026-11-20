@@ -70,19 +70,22 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
     setSyncError('');
     try {
       const currentUser = StorageService.getCurrentUser();
-      if (!cloudStatus.connected) {
-        await apiService.connectStudentGoogleAccount(currentUser);
-      } else {
-        await apiService.flushPendingAttempts(currentUser || undefined);
-      }
+      const res = await apiService.retryStudentAutoSync(currentUser);
       setCloudStatus(apiService.getCloudSyncStatus());
-      setJustSynced(true);
-    } catch (err: any) {
+      if (res.synced) {
+        setJustSynced(true);
+      } else {
+        setSyncError(
+          isEn
+            ? 'Still offline or cloud sync is waiting to be activated. Your score is safely saved on this device.'
+            : 'Chưa kết nối được máy chủ đồng bộ lúc này. Điểm vẫn được lưu an toàn trên máy — em có thể thử lại sau hoặc sao chép phiếu dự phòng.'
+        );
+      }
+    } catch {
       setSyncError(
-        err?.message ||
-          (isEn
-            ? 'Could not sync with Google. Please try again or copy the Zalo backup slip.'
-            : 'Chưa gửi được qua Google. Em thử lại hoặc dùng nút Sao chép phiếu dự phòng nhé.')
+        isEn
+          ? 'Could not sync right now. Your score is safely saved on this device.'
+          : 'Chưa đồng bộ được lúc này. Điểm vẫn được lưu an toàn trên máy của em.'
       );
     } finally {
       setSyncingCloud(false);
@@ -257,40 +260,40 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
               <span>
                 {isEn
                   ? 'Score automatically synced to Ms. Bui Thi Hong Hanh’s Teacher Dashboard!'
-                  : 'Điểm bài làm đã tự động gửi thẳng về Trang quản trị của cô Bùi Thị Hồng Hạnh!'}
+                  : 'Điểm bài làm đã tự động cập nhật thẳng về Trang quản trị của cô Bùi Thị Hồng Hạnh!'}
               </span>
             </div>
           ) : (
-            <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="text-xs text-blue-950">
+            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-xs text-amber-950">
                 <div className="font-extrabold flex items-center gap-1.5">
-                  <Cloud className="w-4 h-4 text-blue-600 shrink-0" />
+                  <Cloud className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>
                     {isEn
-                      ? 'Send score directly to teacher (no Zalo needed)'
-                      : 'Gửi điểm tự động về Trang quản trị của cô Hạnh'}
+                      ? 'Saved locally — waiting for cloud sync'
+                      : 'Đã lưu điểm trên máy — đang chờ đồng bộ lên hệ thống'}
                   </span>
                 </div>
-                <p className="text-[11px] text-blue-800 mt-0.5">
+                <p className="text-[11px] text-amber-800 mt-0.5">
                   {syncError ||
                     (isEn
-                      ? 'Sign in with Google once to upload this score straight to the teacher gradebook.'
-                      : 'Đăng nhập Gmail 1 lần để điểm tự động cập nhật vào bảng điểm của cô (không cần gửi Zalo).')}
+                      ? 'Tap Retry Sync to send this score automatically to your teacher.'
+                      : 'Bấm "Đồng bộ lại" để gửi điểm tự động lên Trang quản trị của cô Hạnh.')}
                 </p>
               </div>
               <button
                 type="button"
                 disabled={syncingCloud}
                 onClick={handleSyncToTeacherNow}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer shrink-0 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer shrink-0 disabled:opacity-50"
               >
                 {syncingCloud
                   ? isEn
-                    ? 'Sending...'
-                    : 'Đang gửi...'
+                    ? 'Syncing...'
+                    : 'Đang đồng bộ...'
                   : isEn
-                    ? 'Send via Google'
-                    : 'Gửi điểm bằng Google'}
+                    ? 'Retry Sync'
+                    : 'Đồng bộ lại'}
               </button>
             </div>
           )}

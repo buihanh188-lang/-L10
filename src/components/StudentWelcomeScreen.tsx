@@ -47,39 +47,6 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
 
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [cloudStatus, setCloudStatus] = useState(() => apiService.getCloudSyncStatus());
-  const [connectingGoogle, setConnectingGoogle] = useState(false);
-
-  React.useEffect(() => {
-    return apiService.subscribeToDataChanges(() => {
-      setCloudStatus(apiService.getCloudSyncStatus());
-    });
-  }, []);
-
-  const handleConnectGoogle = async () => {
-    setConnectingGoogle(true);
-    setError('');
-    try {
-      await apiService.connectStudentGoogleAccount(null);
-      setCloudStatus(apiService.getCloudSyncStatus());
-    } catch (err: any) {
-      setError(
-        err?.message ||
-          (isEn
-            ? 'Could not connect Google account. Please try again.'
-            : 'Chưa kết nối được tài khoản Google. Em vui lòng thử lại.')
-      );
-    } finally {
-      setConnectingGoogle(false);
-    }
-  };
-
-  // Quick autofill for sample official test accounts
-  const handleAutofill = (code: string) => {
-    setUsername(code);
-    setPassword('123456');
-    setError('');
-  };
 
   // Handle Official Login
   const handleOfficialSubmit = async (e: React.FormEvent) => {
@@ -98,8 +65,8 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
     if (!cleanPass) {
       setError(
         isEn
-          ? 'Please enter your student password (default: 123456).'
-          : 'Vui lòng nhập Mật khẩu học sinh (mặc định ban đầu: 123456).'
+          ? 'Please enter your assigned student password.'
+          : 'Vui lòng nhập Mật khẩu học sinh do giáo viên cung cấp.'
       );
       return;
     }
@@ -284,45 +251,6 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
             </p>
           </div>
 
-          {/* Google Cloud Auto-Sync Strip for Students */}
-          <div className="px-5 py-3 bg-emerald-50/90 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2.5">
-            {cloudStatus.connected ? (
-              <div className="flex items-center gap-2 text-xs text-emerald-900 font-semibold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  {isEn
-                    ? `Google Connected (${cloudStatus.email}) — Scores auto-send to Ms. Hanh!`
-                    : `Đã kết nối Google (${cloudStatus.email}) — Nộp bài là điểm tự gửi về cô Hạnh!`}
-                </span>
-              </div>
-            ) : (
-              <>
-                <div className="text-xs text-emerald-950 font-medium leading-snug">
-                  <strong className="font-bold">
-                    {isEn ? 'Auto-Submit Scores:' : 'Gửi điểm tự động về cô Hạnh:'}
-                  </strong>{' '}
-                  {isEn
-                    ? 'Connect Google once so your scores sync straight to your teacher.'
-                    : 'Kết nối Gmail 1 lần để nộp bài là điểm tự động chuyển về Trang quản trị của cô.'}
-                </div>
-                <button
-                  type="button"
-                  disabled={connectingGoogle}
-                  onClick={handleConnectGoogle}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer shrink-0 disabled:opacity-50"
-                >
-                  {connectingGoogle
-                    ? isEn
-                      ? 'Connecting...'
-                      : 'Đang kết nối...'
-                    : isEn
-                      ? 'Connect Google'
-                      : 'Kết nối Google'}
-                </button>
-              </>
-            )}
-          </div>
-
           {/* Tab Selector */}
           <div className="p-2 bg-slate-100 flex items-center gap-2 border-b border-slate-200">
             <button
@@ -379,19 +307,9 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600">
-                    {isEn ? (
-                      <>
-                        Use your assigned Student Code (e.g.:{' '}
-                        <strong className="text-blue-900">HB-1001</strong>) and default password (
-                        <strong className="text-blue-900">123456</strong>) to log in.
-                      </>
-                    ) : (
-                      <>
-                        Sử dụng Mã học sinh (ví dụ:{' '}
-                        <strong className="text-blue-900">HB-1001</strong>) và Mật khẩu khởi tạo được cấp (
-                        <strong className="text-blue-900">123456</strong>) để vào học.
-                      </>
-                    )}
+                    {isEn
+                      ? 'Use your personal Student Code and Password issued by your subject teacher to log in.'
+                      : 'Sử dụng Mã học sinh và Mật khẩu riêng do giáo viên bộ môn cung cấp để đăng nhập vào học.'}
                   </p>
                 </div>
 
@@ -415,8 +333,8 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
                     }}
                     placeholder={
                       isEn
-                        ? 'Enter student code (e.g.: HB-1001, HB-1002...)'
-                        : 'Nhập mã học sinh (Ví dụ: HB-1001, HB-1002...)'
+                        ? 'Enter your assigned student code'
+                        : 'Nhập mã học sinh do giáo viên cấp'
                     }
                     className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white transition"
                     autoFocus
@@ -428,10 +346,10 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <KeyRound className="w-4 h-4 text-blue-600" />
-                      <span>{isEn ? 'Password' : 'Mật khẩu kích hoạt'}</span>
+                      <span>{isEn ? 'Password' : 'Mật khẩu học sinh'}</span>
                     </span>
-                    <span className="text-slate-400 font-normal text-xs">
-                      {isEn ? 'Default: 123456' : 'Mặc định: 123456'}
+                    <span className="text-rose-600 font-bold text-xs">
+                      {isEn ? '* Required' : '* Bắt buộc'}
                     </span>
                   </label>
                   <input
@@ -442,44 +360,10 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
                       if (error) setError('');
                     }}
                     placeholder={
-                      isEn ? 'Enter password (Default: 123456)' : 'Nhập mật khẩu (Mặc định: 123456)'
+                      isEn ? 'Enter your personal password' : 'Nhập mật khẩu cá nhân'
                     }
                     className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white transition"
                   />
-                </div>
-
-                {/* Quick Sample Accounts Pill Bar */}
-                <div className="pt-1">
-                  <div className="text-[11px] font-semibold text-slate-500 mb-1.5 flex items-center justify-between">
-                    <span>{isEn ? 'Quick test sample accounts:' : 'Thử nghiệm nhanh tài khoản mẫu:'}</span>
-                    <span className="text-slate-400">{isEn ? 'PW: 123456' : 'MK: 123456'}</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleAutofill('HB-1001')}
-                      className="py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-blue-50 text-[11px] font-semibold text-slate-700 hover:text-blue-700 border border-slate-200 text-center transition truncate"
-                      title={isEn ? 'Hoang Van Dung - Class 10A1' : 'Hoàng Văn Dũng - Lớp 10A1'}
-                    >
-                      HB-1001 (10A1)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAutofill('HB-1004')}
-                      className="py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-blue-50 text-[11px] font-semibold text-slate-700 hover:text-blue-700 border border-slate-200 text-center transition truncate"
-                      title={isEn ? 'Lang Thi Lan - Class 10A2' : 'Lăng Thị Lan - Lớp 10A2'}
-                    >
-                      HB-1004 (10A2)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAutofill('HB-1007')}
-                      className="py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-blue-50 text-[11px] font-semibold text-slate-700 hover:text-blue-700 border border-slate-200 text-center transition truncate"
-                      title={isEn ? 'Vy Thu Phuong - Class 10A3' : 'Vy Thu Phương - Lớp 10A3'}
-                    >
-                      HB-1007 (10A3)
-                    </button>
-                  </div>
                 </div>
 
                 {/* Identity Lock Notice */}

@@ -3,6 +3,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
+  signInAnonymously,
   signInWithPopup,
   signOut,
   type User as FirebaseUser,
@@ -113,12 +114,62 @@ export function isVerifiedFirebaseUser(user: FirebaseUser | null | undefined): u
   return Boolean(user && user.uid && user.emailVerified);
 }
 
+export function isCloudSyncEligibleUser(
+  user: FirebaseUser | null | undefined
+): user is FirebaseUser {
+  return Boolean(user && user.uid && (user.emailVerified || user.isAnonymous));
+}
+
 export function isTeacherFirebaseUser(user: FirebaseUser | null | undefined): boolean {
   return Boolean(
     isVerifiedFirebaseUser(user) &&
       user.email &&
       user.email.toLowerCase() === TEACHER_ADMIN_EMAIL
   );
+}
+
+let pendingAnonSignIn: Promise<{
+  user: FirebaseUser | null;
+  needsConsoleEnable?: boolean;
+  errorCode?: string;
+}> | null = null;
+
+export async function ensureAnonymousStudentSession(): Promise<{
+  user: FirebaseUser | null;
+  needsConsoleEnable?: boolean;
+  errorCode?: string;
+}> {
+  try {
+    await auth.authStateReady();
+  } catch {
+    // proceed
+  }
+
+  if (isCloudSyncEligibleUser(auth.currentUser)) {
+    return { user: auth.currentUser };
+  }
+
+  if (pendingAnonSignIn) {
+    return pendingAnonSignIn;
+  }
+
+  pendingAnonSignIn = (async () => {
+    try {
+      const cred = await signInAnonymously(auth);
+      return { user: cred.user };
+    } catch (err: any) {
+      const code = String(err?.code || err?.message || '');
+      const needsConsoleEnable =
+        code.includes('admin-restricted-operation') ||
+        code.includes('operation-not-allowed');
+      console.warn('Silent student Firebase session notice:', code);
+      return { user: null, needsConsoleEnable, errorCode: code };
+    } finally {
+      pendingAnonSignIn = null;
+    }
+  })();
+
+  return pendingAnonSignIn;
 }
 
 export async function signInWithGooglePopup(): Promise<FirebaseUser> {
@@ -371,7 +422,7 @@ export function buildAttemptCreatePayload(uid: string, record: ExamRecord) {
 // =========================================================================
 export async function syncStudentProfileToCloud(profile: Partial<UserProfile>): Promise<boolean> {
   const user = auth.currentUser;
-  if (!isVerifiedFirebaseUser(user)) return false;
+  if (!isCloudSyncEligibleUser(user)) return false;
 
   const uid = user.uid;
   const studentPath = `students/${uid}`;
@@ -397,7 +448,7 @@ export async function syncAttemptToCloud(
   profile?: Partial<UserProfile>
 ): Promise<{ synced: boolean; attemptId: string }> {
   const user = auth.currentUser;
-  if (!isVerifiedFirebaseUser(user)) {
+  if (!isCloudSyncEligibleUser(user)) {
     return { synced: false, attemptId: record.id };
   }
 
@@ -523,7 +574,7 @@ export function subscribeCloudData(
   onUpdate: (payload: { attempts?: ExamRecord[]; students?: UserProfile[] }) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
-  if (!isVerifiedFirebaseUser(user)) {
+  if (!isCloudSyncEligibleUser(user)) {
     return () => {};
   }
 
@@ -604,7 +655,7 @@ export async function fetchCloudDataOnce(): Promise<{
   students: UserProfile[];
 } | null> {
   const user = auth.currentUser;
-  if (!isVerifiedFirebaseUser(user)) return null;
+  if (!isCloudSyncEligibleUser(user)) return null;
 
   const isTeacher = isTeacherFirebaseUser(user);
   let attempts: ExamRecord[] = [];

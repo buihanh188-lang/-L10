@@ -219,18 +219,20 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
     }
   };
 
-  // Password Reset for a Student
+  // Password Reset for a Student (generates a fresh private random 6-char password)
   const handleResetPassword = async (studentId: string) => {
     try {
-      const res = await apiService.resetStudentPassword(studentId, '123456');
+      const res = await apiService.resetStudentPassword(studentId);
       setPasswordResetFeedback(
         isEn
-          ? `Successfully reset password for ${res.studentName} (${res.studentCode}) to default 123456.`
-          : `Đã đặt lại mật khẩu của ${res.studentName} (${res.studentCode}) về 123456 thành công.`
+          ? `New private password for ${res.studentName} (${res.studentCode}): ${res.newPassword}`
+          : `Đã cấp mật khẩu mới riêng cho ${res.studentName} (${res.studentCode}): ${res.newPassword}`
       );
-      setTimeout(() => setPasswordResetFeedback(null), 4000);
+      setTimeout(() => setPasswordResetFeedback(null), 10000);
     } catch (err: any) {
-      alert(err.message || (isEn ? 'Failed to reset password.' : 'Không thể đặt lại mật khẩu.'));
+      setPasswordResetFeedback(
+        err.message || (isEn ? 'Failed to reset password.' : 'Không thể đặt lại mật khẩu.')
+      );
     }
   };
 
@@ -926,10 +928,10 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
                         <button
                           onClick={() => handleResetPassword(st.studentId)}
                           className="py-1 px-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition inline-flex items-center gap-1 cursor-pointer"
-                          title={isEn ? 'Reset password to default 123456' : 'Đặt lại mật khẩu về 123456'}
+                          title={isEn ? 'Generate a new random password' : 'Cấp mật khẩu mới ngẫu nhiên'}
                         >
                           <KeyRound className="w-3.5 h-3.5" />
-                          <span>{isEn ? 'Reset Pass' : 'Cấp lại MK'}</span>
+                          <span>{isEn ? 'New Pass' : 'Cấp MK mới'}</span>
                         </button>
                       </td>
                     </tr>
@@ -1257,7 +1259,7 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
                 className="py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
               >
                 <KeyRound className="w-4 h-4" />
-                <span>{isEn ? 'Reset Password (to 123456)' : 'Cấp lại mật khẩu (về 123456)'}</span>
+                <span>{isEn ? 'Generate New Password' : 'Cấp mật khẩu mới ngẫu nhiên'}</span>
               </button>
 
               <button
@@ -1359,7 +1361,7 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
                 <div className="space-y-2">
                   <div className="font-bold text-slate-900 flex items-center justify-between">
                     <span>{isEn ? `Preview roster (${importPreview.length} students):` : `Xem trước danh sách (${importPreview.length} học sinh):`}</span>
-                    <span className="text-slate-500 text-[11px]">{isEn ? 'Default password: 123456' : 'Mật khẩu mặc định: 123456'}</span>
+                    <span className="text-slate-500 text-[11px]">{isEn ? 'Private random password per student' : 'Cấp mật khẩu riêng từng học sinh'}</span>
                   </div>
                   <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl">
                     <table className="w-full text-left text-xs">

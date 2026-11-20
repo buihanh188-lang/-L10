@@ -25,11 +25,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Strict verified Google account check — MANDATORY for Teacher Admin RBAC
     function isVerifiedUser() {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    function isOwner(userId) {
+    // Student session owner check — supports silent Firebase Anonymous Auth
+    // so students never need Gmail popups while preserving strict UID isolation
+    function isStudentOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isVerifiedOwner(userId) {
       return isVerifiedUser() && request.auth.uid == userId;
     }
 
@@ -212,30 +219,30 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // 1. ADMINS COLLECTION (Read-only RBAC grants; no client writes)
+    // 1. ADMINS COLLECTION (Strict verified Google Admin only; no client writes)
     // =========================================================================
     match /admins/{adminUid} {
-      allow get: if isVerifiedUser() && isValidId(adminUid) && (isOwner(adminUid) || isBootstrapAdmin());
+      allow get: if isVerifiedUser() && isValidId(adminUid) && (isVerifiedOwner(adminUid) || isBootstrapAdmin());
       allow list: if false;
       allow create, update, delete: if false;
     }
 
     // =========================================================================
-    // 2. STUDENTS COLLECTION (PII Isolated to Owner & Teacher Admin)
+    // 2. STUDENTS COLLECTION (Owner-Isolated via UID; Full Access to Verified Teacher Admin)
     // =========================================================================
     match /students/{userId} {
-      allow get: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
-      allow list: if isVerifiedUser() && (isBootstrapAdmin() || resource.data.ownerUid == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(userId) && (isStudentOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.ownerUid == request.auth.uid);
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isSignedIn() &&
         isValidId(userId) &&
-        isOwner(userId) &&
+        isStudentOwner(userId) &&
         isValidStudentProfile(incoming()) &&
         incoming().ownerUid == request.auth.uid &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isSignedIn() &&
         isValidId(userId) &&
         isValidStudentProfile(incoming()) &&
         incoming().ownerUid == existing().ownerUid &&
@@ -245,7 +252,7 @@ service cloud.firestore {
           (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
             'studentId', 'studentType', 'name', 'studentCode', 'className', 'school', 'province', 'joinedDate', 'lastLoginAt', 'updatedAt'
           ])) ||
-          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly([
+          (isStudentOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly([
             'studentId', 'studentType', 'name', 'studentCode', 'className', 'school', 'province', 'lastLoginAt', 'updatedAt'
           ]))
         );
@@ -254,13 +261,13 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // 3. ATTEMPTS COLLECTION (Immutable Submitted Exam & Practice Records)
+    // 3. ATTEMPTS COLLECTION (Immutable Submitted Records; Silent Anonymous Student Create + Verified Admin Read/Manage)
     // =========================================================================
     match /attempts/{attemptId} {
-      allow get: if isVerifiedUser() && isValidId(attemptId) && (existing().ownerUid == request.auth.uid || isAdmin());
-      allow list: if isVerifiedUser() && (isBootstrapAdmin() || resource.data.ownerUid == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(attemptId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.ownerUid == request.auth.uid);
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isSignedIn() &&
         isValidId(attemptId) &&
         isValidAttempt(incoming()) &&
         incoming().id == attemptId &&

@@ -91,18 +91,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Teacher Credit & Language Switcher at Top Right */}
           <div className="flex items-center space-x-3 text-[11px] text-slate-300">
-            <a
-              href="/admin"
-              onClick={(e) => {
-                e.preventDefault();
-                window.location.href = window.location.origin + '/admin';
-              }}
-              className="hidden lg:inline hover:underline cursor-pointer group"
-              title={isEn ? "Open Teacher Admin Portal" : "Mở Cổng Quản Trị Giáo Viên"}
-            >
+            <span className="hidden lg:inline">
               {t('app.teacher_in_charge')}{' '}
-              <strong className="text-amber-300 font-bold group-hover:text-amber-200">Bùi Thị Hồng Hạnh</strong>
-            </a>
+              <strong className="text-amber-300 font-bold">Bùi Thị Hồng Hạnh</strong>
+            </span>
             <LanguageSwitcher />
           </div>
         </div>

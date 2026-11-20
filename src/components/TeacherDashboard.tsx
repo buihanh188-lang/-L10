@@ -2205,6 +2205,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           )}
 
+          {/* Silent Student Auto-Sync Setup Guide */}
+          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-xs text-blue-950 space-y-2 leading-relaxed">
+            <div className="font-extrabold text-blue-900">
+              {isEn
+                ? 'Automatic Score Submission Without Student Gmail (1-Time Switch):'
+                : 'Chế độ tự động nhận điểm KHÔNG cần học sinh đăng nhập Gmail (Bật 1 lần duy nhất):'}
+            </div>
+            <p className="text-blue-900/90">
+              {isEn
+                ? 'Students never need to click "Connect Google" — they simply log in with their Student Code and submit. To activate silent background sync on Firebase, make sure "Anonymous" sign-in is enabled once in Firebase Console:'
+                : 'Học sinh chỉ cần nhập Mã học sinh (hoặc Họ tên) và làm bài, nộp bài xong điểm tự động đổ thẳng về bảng điểm của cô mà không cần bấm Gmail. Để kích hoạt 1 lần duy nhất, cô bật mục Anonymous (Ẩn danh) tại Firebase Console:'}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <a
+                href="https://console.firebase.google.com/project/gen-lang-client-0394460331/authentication/providers"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition"
+              >
+                <span>
+                  {isEn
+                    ? 'Open Firebase Authentication Providers'
+                    : 'Mở Firebase Console → Bật Anonymous (Ẩn danh)'}
+                </span>
+              </a>
+              <span className="text-[11px] text-blue-800">
+                {isEn
+                  ? 'Add new provider → Anonymous → Enable → Save'
+                  : 'Chọn Add new provider → Anonymous → Bật Enable → Save'}
+              </span>
+            </div>
+          </div>
+
           <div className="space-y-3">
             <h3 className="text-sm font-bold text-slate-900">
               {isEn

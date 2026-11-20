@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Lock,
-  User,
-  Eye,
-  EyeOff,
   ShieldCheck,
   ShieldAlert,
   ArrowRight,
@@ -11,7 +7,7 @@ import {
   ArrowLeft,
   KeyRound,
   CheckCircle2,
-  Info,
+  Lock,
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { apiService } from '../services/api';
@@ -30,92 +26,17 @@ export const TeacherAdminLoginPage: React.FC<TeacherAdminLoginPageProps> = ({
   const { language } = useLanguage();
   const isEn = language === 'en';
 
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasAdminAccount, setHasAdminAccount] = useState<boolean | null>(null);
 
+  // Purge any legacy saved local credentials from earlier versions
   useEffect(() => {
-    let mounted = true;
-    apiService
-      .getTeacherSystemStatus()
-      .then((status) => {
-        if (mounted) {
-          setHasAdminAccount(Boolean(status.hasAdminAccount));
-        }
-      })
-      .catch(() => {
-        if (mounted) setHasAdminAccount(false);
-      });
-
-    // Auto-load remembered credentials or prefill default for teacher
     try {
-      const saved = localStorage.getItem('dia_li_10_saved_admin_creds');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.username) setUsername(parsed.username);
-        if (parsed.password) setPassword(parsed.password);
-        setRememberMe(true);
-      } else {
-        setUsername('buihanh188');
-        setPassword('CoHanh@DiaLi10');
-      }
+      localStorage.removeItem('dia_li_10_saved_admin_creds');
     } catch {
-      setUsername('buihanh188');
-      setPassword('CoHanh@DiaLi10');
+      // ignore
     }
-
-    return () => {
-      mounted = false;
-    };
   }, []);
-
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanUser = username.trim();
-    const cleanPass = password.trim();
-    if (!cleanUser || !cleanPass) {
-      setLoginError(
-        isEn
-          ? 'Please enter both username and password.'
-          : 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.'
-      );
-      return;
-    }
-
-    setIsSubmitting(true);
-    setLoginError('');
-
-    try {
-      const result = await apiService.teacherLogin(cleanUser, cleanPass);
-      if (rememberMe) {
-        try {
-          localStorage.setItem(
-            'dia_li_10_saved_admin_creds',
-            JSON.stringify({ username: cleanUser, password: cleanPass })
-          );
-        } catch (e) {}
-      } else {
-        try {
-          localStorage.removeItem('dia_li_10_saved_admin_creds');
-        } catch (e) {}
-      }
-      StorageService.setCurrentUser(result.user);
-      onLoginSuccess(result.user);
-    } catch (err: any) {
-      setLoginError(
-        err?.message ||
-          (isEn
-            ? 'Incorrect username or password. Please verify your credentials.'
-            : 'Tên đăng nhập hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại.')
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const handleGoogleTeacherLogin = async () => {
     setIsSubmitting(true);
@@ -128,8 +49,8 @@ export const TeacherAdminLoginPage: React.FC<TeacherAdminLoginPageProps> = ({
       setLoginError(
         err?.message ||
           (isEn
-            ? 'Google sign-in failed. Please select your teacher Gmail account (buihanh188@gmail.com).'
-            : 'Đăng nhập Google không thành công. Cô vui lòng chọn đúng Gmail giáo viên (buihanh188@gmail.com).')
+            ? 'Google authentication failed. Only the authorized teacher account (buihanh188@gmail.com) can access this portal.'
+            : 'Xác thực Google không thành công. Chỉ duy nhất Gmail giáo viên quản trị (buihanh188@gmail.com) mới được phép truy cập.')
       );
     } finally {
       setIsSubmitting(false);
@@ -199,169 +120,53 @@ export const TeacherAdminLoginPage: React.FC<TeacherAdminLoginPageProps> = ({
             </div>
           </div>
 
-          {/* System Security Notice */}
-          <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl p-3 flex items-start gap-2.5 text-xs text-emerald-950 font-medium">
-            <ShieldAlert className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+          {/* Strict Security Notice */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-950 font-medium">
+            <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
             <span>
               {isEn
-                ? 'Sign in with your teacher Google account (buihanh188@gmail.com) to automatically receive student scores in real time from Firebase Cloud.'
-                : 'Đăng nhập bằng tài khoản Google giáo viên (buihanh188@gmail.com) để tự động nhận toàn bộ điểm học sinh đồng bộ trực tiếp từ đám mây Firebase.'}
+                ? 'Strictly protected by Google Authentication. Only Ms. Bui Thi Hong Hanh’s verified Gmail account can sign in. Students cannot access this portal.'
+                : 'Khu vực bảo mật tuyệt đối bằng xác thực Google. Chỉ duy nhất Gmail cá nhân của cô Bùi Thị Hồng Hạnh mới được phép vào. Học sinh không thể truy cập.'}
             </span>
           </div>
 
-          {/* 1-Click Google Cloud Admin Sign-In */}
+          {loginError && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          {/* Google-Only Verified Teacher Sign-In */}
           <button
             type="button"
             disabled={isSubmitting}
             onClick={handleGoogleTeacherLogin}
-            className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-900 border-2 border-emerald-500 text-sm font-extrabold shadow-sm transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+            className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-700 hover:from-emerald-700 hover:via-teal-700 hover:to-blue-800 text-white text-sm font-extrabold shadow-lg shadow-emerald-600/25 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
           >
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-5 h-5 text-amber-300 shrink-0" />
             <span>
-              {isEn
-                ? 'Sign in with Google (buihanh188@gmail.com)'
-                : 'Đăng nhập nhanh bằng Google (Tự động đồng bộ điểm)'}
+              {isSubmitting
+                ? isEn
+                  ? 'VERIFYING GOOGLE ACCOUNT...'
+                  : 'ĐANG XÁC THỰC GOOGLE...'
+                : isEn
+                  ? 'SIGN IN WITH TEACHER GOOGLE ACCOUNT'
+                  : 'ĐĂNG NHẬP QUẢN TRỊ BẰNG GOOGLE'}
             </span>
+            <ArrowRight className="w-4 h-4 shrink-0" />
           </button>
-
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-slate-200 w-full" />
-            <span className="bg-white px-3 text-[11px] font-bold text-slate-400 uppercase shrink-0">
-              {isEn ? 'or use password' : 'hoặc dùng mật khẩu'}
-            </span>
-            <div className="border-t border-slate-200 w-full" />
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
-            {loginError && (
-              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2 animate-shake">
-                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{loginError}</span>
-              </div>
-            )}
-
-            {/* Username */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{isEn ? 'Username' : 'Tên đăng nhập'}</span>
-                </span>
-                <span className="text-rose-500 font-bold">*</span>
-              </label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                autoComplete="username"
-                required
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  if (loginError) setLoginError('');
-                }}
-                placeholder={isEn ? 'Enter username' : 'Nhập tên đăng nhập'}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-800 bg-white"
-                autoFocus
-              />
-            </div>
-
-            {/* Password */}
-            <div className="space-y-1.5">
-              <label htmlFor="password" className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-blue-600" />
-                  <span>{isEn ? 'Password' : 'Mật khẩu'}</span>
-                </span>
-                <span className="text-rose-500 font-bold">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (loginError) setLoginError('');
-                  }}
-                  placeholder={isEn ? 'Enter password' : 'Nhập mật khẩu'}
-                  className="w-full px-4 py-3 pr-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-800 bg-white"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Remember password & Auto-fill */}
-            <div className="flex items-center justify-between pt-1 pb-1 text-xs">
-              <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600"
-                />
-                <span>{isEn ? 'Remember credentials' : 'Ghi nhớ mật khẩu'}</span>
-              </label>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('buihanh188');
-                  setPassword('CoHanh@DiaLi10');
-                  setRememberMe(true);
-                  try {
-                    localStorage.setItem(
-                      'dia_li_10_saved_admin_creds',
-                      JSON.stringify({ username: 'buihanh188', password: 'CoHanh@DiaLi10' })
-                    );
-                  } catch (e) {}
-                }}
-                className="font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer flex items-center gap-1"
-                title={isEn ? 'Click to auto-fill credentials' : 'Bấm để tự động điền sẵn mật khẩu'}
-              >
-                <span>{isEn ? 'Auto-fill credentials' : 'Tự điền mật khẩu'}</span>
-              </button>
-            </div>
-
-            {/* Submit button */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-700 hover:from-emerald-700 hover:via-teal-700 hover:to-blue-800 text-white text-sm font-bold shadow-lg shadow-emerald-600/25 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              <span>
-                {isSubmitting
-                  ? isEn
-                    ? 'AUTHENTICATING ON SERVER...'
-                    : 'ĐANG XÁC THỰC MÁY CHỦ...'
-                  : isEn
-                  ? 'LOG IN TO ADMIN'
-                  : 'ĐĂNG NHẬP QUẢN TRỊ'}
-              </span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
 
           {/* Security feature note */}
           <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 space-y-1">
             <div className="font-bold text-slate-700 flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{isEn ? 'Server Security Mechanism:' : 'Cơ chế bảo mật máy chủ:'}</span>
+              <span>{isEn ? 'Google + Firebase Security:' : 'Bảo mật xác thực Google + Firebase:'}</span>
             </div>
             <p className="leading-relaxed">
               {isEn
-                ? 'Credentials are protected with salted SHA-256 on the server. Access authorization is validated using secure 256-bit session tokens.'
-                : 'Mật khẩu được mã hóa SHA-256 kết hợp chuỗi ngẫu nhiên (salt 128-bit) trên máy chủ. Quyền truy cập được xác thực bằng khóa phiên 256-bit an toàn.'}
+                ? 'No password is stored or pre-filled in the browser. Access is verified directly by Google Identity and Firebase Security Rules.'
+                : 'Không lưu hay điền sẵn mật khẩu trên trình duyệt. Quyền quản trị được xác thực trực tiếp qua Google và quy tắc bảo mật Firebase.'}
             </p>
           </div>
         </div>
@@ -376,4 +181,3 @@ export const TeacherAdminLoginPage: React.FC<TeacherAdminLoginPageProps> = ({
     </div>
   );
 };
-
