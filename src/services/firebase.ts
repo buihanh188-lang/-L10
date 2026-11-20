@@ -459,11 +459,6 @@ export async function syncAttemptToCloud(
   const attemptPath = `attempts/${safeAttemptId}`;
 
   try {
-    const existingAttempt = await getDoc(attemptRef);
-    if (existingAttempt.exists()) {
-      return { synced: true, attemptId: safeAttemptId };
-    }
-
     const studentSnap = await getDoc(studentRef);
     const batch = writeBatch(db);
 
@@ -496,6 +491,15 @@ export async function syncAttemptToCloud(
     await batch.commit();
     return { synced: true, attemptId: safeAttemptId };
   } catch (error) {
+    // Idempotency check: if this attempt already exists and belongs to this user, treat as synced
+    try {
+      const existingAttempt = await getDoc(attemptRef);
+      if (existingAttempt.exists()) {
+        return { synced: true, attemptId: safeAttemptId };
+      }
+    } catch {
+      // fall through to primary error handler
+    }
     handleFirestoreError(error, OperationType.CREATE, attemptPath);
   }
 }

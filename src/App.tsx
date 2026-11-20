@@ -116,8 +116,21 @@ function AppContent() {
   // Automatically initialize silent anonymous Firebase session for active students (no Gmail required)
   React.useEffect(() => {
     if (currentUser?.role === 'student') {
-      ensureAnonymousStudentSession().catch(() => {});
+      ensureAnonymousStudentSession()
+        .then((res) => {
+          if (res.user) {
+            apiService.flushPendingAttempts(currentUser).catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
+    const handleOnline = () => {
+      apiService.flushPendingAttempts(StorageService.getCurrentUser() || undefined).catch(() => {});
+    };
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
   }, [currentUser?.id, currentUser?.role]);
 
   // Discreet teacher portal trigger via URL path /admin, query param (?portal=teacher / ?admin=login) or secret shortcut (Alt+Shift+T / Ctrl+Shift+A)

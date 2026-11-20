@@ -65,6 +65,31 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
     });
   }, []);
 
+  // Automatically retry background cloud sync if submission was momentarily queued (zero manual click needed)
+  useEffect(() => {
+    if (isSyncedToTeacher) return;
+    let cancelled = false;
+    const runAutoRetry = async () => {
+      try {
+        const currentUser = StorageService.getCurrentUser();
+        const res = await apiService.retryStudentAutoSync(currentUser);
+        if (!cancelled) {
+          setCloudStatus(apiService.getCloudSyncStatus());
+          if (res.synced) setJustSynced(true);
+        }
+      } catch {
+        // silent retry
+      }
+    };
+    const timer = window.setTimeout(runAutoRetry, 1200);
+    window.addEventListener('online', runAutoRetry);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('online', runAutoRetry);
+    };
+  }, [isSyncedToTeacher, record.id]);
+
   const handleSyncToTeacherNow = async () => {
     setSyncingCloud(true);
     setSyncError('');
