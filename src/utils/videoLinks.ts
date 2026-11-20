@@ -43,15 +43,26 @@ export function parseAndNormalizeExternalVideoUrl(rawInput: string): ExternalVid
     return { valid: false, error: 'Đường dẫn video không được để trống.' };
   }
 
+  // 0. Static bundled video files served from public/videos/ (works locally & on Vercel)
+  if (rawUrl.startsWith('/videos/') && !rawUrl.includes('..') && /^\/videos\/[a-zA-Z0-9._/-]+$/.test(rawUrl)) {
+    return {
+      valid: true,
+      rawUrl,
+      normalizedUrl: rawUrl,
+      provider: 'direct_url',
+      playbackType: 'html5_video',
+    };
+  }
+
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return { valid: false, error: 'Đường dẫn không đúng định dạng URL (cần bắt đầu bằng https:// hoặc http://).' };
+    return { valid: false, error: 'Đường dẫn không đúng định dạng URL (cần bắt đầu bằng https://, http:// hoặc /videos/).' };
   }
 
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    return { valid: false, error: 'Chỉ hỗ trợ liên kết https:// hoặc http://.' };
+    return { valid: false, error: 'Chỉ hỗ trợ liên kết https://, http:// hoặc đường dẫn /videos/.' };
   }
 
   const host = parsed.hostname.toLowerCase();
@@ -209,6 +220,6 @@ export function parseBulkExternalLinksText(rawText: string): BulkParsedLine[] {
 export function getExternalProviderLabel(provider?: ExternalVideoProvider | 'local' | null): string {
   if (provider === 'google_drive') return 'Google Drive';
   if (provider === 'youtube') return 'YouTube';
-  if (provider === 'direct_url') return 'Link MP4 ngoài';
+  if (provider === 'direct_url') return 'Video MP4 trực tiếp';
   return 'Máy chủ nội bộ';
 }

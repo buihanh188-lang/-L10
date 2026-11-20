@@ -1,0 +1,289 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // GLOBAL SAFETY NET (Default Deny)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // HARDENED GLOBAL PRIMITIVES
+    // =========================================================================
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isBootstrapAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'buihanh188@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() ||
+        (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // =========================================================================
+    // ENTITY VALIDATION BLUEPRINTS (Anti-Update-Gap)
+    // =========================================================================
+    function isValidStudentProfile(data) {
+      return data.keys().hasAll([
+          'ownerUid',
+          'role',
+          'studentId',
+          'studentType',
+          'name',
+          'studentCode',
+          'className',
+          'school',
+          'province',
+          'joinedDate',
+          'lastLoginAt',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerUid',
+          'role',
+          'studentId',
+          'studentType',
+          'name',
+          'studentCode',
+          'className',
+          'school',
+          'province',
+          'joinedDate',
+          'lastLoginAt',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isValidId(data.ownerUid) &&
+        data.role == 'student' &&
+        isValidId(data.studentId) &&
+        data.studentType in ['official', 'extended'] &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.studentCode, 1, 64) &&
+        isValidString(data.className, 1, 32) &&
+        isValidString(data.school, 1, 160) &&
+        isValidString(data.province, 1, 100) &&
+        isValidString(data.joinedDate, 1, 32) &&
+        isValidString(data.lastLoginAt, 1, 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAttempt(data) {
+      return data.keys().hasAll([
+          'id',
+          'ownerUid',
+          'status',
+          'studentId',
+          'studentName',
+          'studentCode',
+          'schoolName',
+          'className',
+          'lessonId',
+          'chapterId',
+          'lessonTitle',
+          'questionType',
+          'title',
+          'mode',
+          'timestamp',
+          'date',
+          'durationSeconds',
+          'timeLimitMinutes',
+          'totalQuestions',
+          'answeredCount',
+          'unansweredCount',
+          'score',
+          'correctCount',
+          'wrongCount',
+          'accuracyRate',
+          'language',
+          'details',
+          'typeBreakdown',
+          'topicBreakdown',
+          'weakTopics',
+          'strongTopics',
+          'recommendation',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id',
+          'ownerUid',
+          'status',
+          'studentId',
+          'studentName',
+          'studentCode',
+          'schoolName',
+          'className',
+          'lessonId',
+          'chapterId',
+          'lessonTitle',
+          'questionType',
+          'title',
+          'mode',
+          'timestamp',
+          'date',
+          'durationSeconds',
+          'timeLimitMinutes',
+          'totalQuestions',
+          'answeredCount',
+          'unansweredCount',
+          'score',
+          'correctCount',
+          'wrongCount',
+          'accuracyRate',
+          'language',
+          'details',
+          'typeBreakdown',
+          'topicBreakdown',
+          'weakTopics',
+          'strongTopics',
+          'recommendation',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerUid) &&
+        data.status == 'submitted' &&
+        isValidString(data.studentId, 1, 128) &&
+        isValidString(data.studentName, 1, 120) &&
+        isValidString(data.studentCode, 1, 64) &&
+        isValidString(data.schoolName, 1, 160) &&
+        isValidString(data.className, 1, 32) &&
+        isValidString(data.lessonId, 0, 64) &&
+        isValidString(data.chapterId, 0, 64) &&
+        isValidString(data.lessonTitle, 0, 200) &&
+        data.questionType in ['multiple_choice', 'true_false_context', 'short_answer', 'matching', 'all'] &&
+        isValidString(data.title, 1, 200) &&
+        data.mode in ['practice_topic', 'practice_type', 'practice_comprehensive', 'official_test'] &&
+        data.timestamp is number && data.timestamp >= 0 &&
+        isValidString(data.date, 0, 32) &&
+        data.durationSeconds is number && data.durationSeconds >= 0 && data.durationSeconds <= 86400 &&
+        data.timeLimitMinutes is number && data.timeLimitMinutes >= 0 && data.timeLimitMinutes <= 600 &&
+        data.totalQuestions is number && data.totalQuestions >= 1 && data.totalQuestions <= 200 &&
+        data.answeredCount is number && data.answeredCount >= 0 && data.answeredCount <= 200 &&
+        data.unansweredCount is number && data.unansweredCount >= 0 && data.unansweredCount <= 200 &&
+        data.score is number && data.score >= 0 && data.score <= 10 &&
+        data.correctCount is number && data.correctCount >= 0 && data.correctCount <= 200 &&
+        data.wrongCount is number && data.wrongCount >= 0 && data.wrongCount <= 200 &&
+        data.accuracyRate is number && data.accuracyRate >= 0 && data.accuracyRate <= 100 &&
+        data.language in ['vi', 'en'] &&
+        data.details is list && data.details.size() <= 60 &&
+        (data.details.size() == 0 || data.details[0] is map) &&
+        data.typeBreakdown is map &&
+        data.topicBreakdown is map &&
+        data.weakTopics is list && data.weakTopics.size() <= 20 &&
+        (data.weakTopics.size() == 0 || data.weakTopics[0] is string) &&
+        data.strongTopics is list && data.strongTopics.size() <= 20 &&
+        (data.strongTopics.size() == 0 || data.strongTopics[0] is string) &&
+        isValidString(data.recommendation, 0, 500) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // 1. ADMINS COLLECTION (Read-only RBAC grants; no client writes)
+    // =========================================================================
+    match /admins/{adminUid} {
+      allow get: if isVerifiedUser() && isValidId(adminUid) && (isOwner(adminUid) || isBootstrapAdmin());
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // 2. STUDENTS COLLECTION (PII Isolated to Owner & Teacher Admin)
+    // =========================================================================
+    match /students/{userId} {
+      allow get: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isVerifiedUser() && (isBootstrapAdmin() || resource.data.ownerUid == request.auth.uid);
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isOwner(userId) &&
+        isValidStudentProfile(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidStudentProfile(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'studentId', 'studentType', 'name', 'studentCode', 'className', 'school', 'province', 'joinedDate', 'lastLoginAt', 'updatedAt'
+          ])) ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly([
+            'studentId', 'studentType', 'name', 'studentCode', 'className', 'school', 'province', 'lastLoginAt', 'updatedAt'
+          ]))
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 3. ATTEMPTS COLLECTION (Immutable Submitted Exam & Practice Records)
+    // =========================================================================
+    match /attempts/{attemptId} {
+      allow get: if isVerifiedUser() && isValidId(attemptId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (isBootstrapAdmin() || resource.data.ownerUid == request.auth.uid);
+
+      allow create: if isVerifiedUser() &&
+        isValidId(attemptId) &&
+        isValidAttempt(incoming()) &&
+        incoming().id == attemptId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (existsAfter(/databases/$(database)/documents/students/$(request.auth.uid)) || isAdmin());
+
+      // Terminal State Locking: Once submitted, students cannot tamper with scores.
+      // Only verified Teacher Admin can make administrative adjustments or delete records.
+      allow update: if isVerifiedUser() &&
+        isValidId(attemptId) &&
+        isValidAttempt(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'studentName', 'studentCode', 'schoolName', 'className', 'recommendation', 'updatedAt'
+        ]);
+
+      allow delete: if isVerifiedUser() && isValidId(attemptId) && isAdmin();
+    }
+  }
+}

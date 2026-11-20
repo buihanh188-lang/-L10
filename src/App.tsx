@@ -18,8 +18,14 @@ import { StudentWelcomeScreen } from './components/StudentWelcomeScreen';
 import { TeacherLoginModal } from './components/TeacherLoginModal';
 import { TeacherAdminLoginPage } from './components/TeacherAdminLoginPage';
 import { DiscoveryRunner } from './components/DiscoveryRunner';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ArrowLeft, KeyRound, Lock, ShieldAlert } from 'lucide-react';
 import { LanguageProvider, useLanguage, LanguageSwitcher } from './contexts/LanguageContext';
+import {
+  isVerifiedFirebaseUser,
+  subscribeCloudData,
+  subscribeFirebaseAuth,
+} from './services/firebase';
 
 function AppContent() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() =>
@@ -72,6 +78,39 @@ function AppContent() {
       isCancelled = true;
     };
   }, [currentUser?.role]);
+
+  // Firebase Auth & Real-time Firestore Cloud Sync Listener
+  React.useEffect(() => {
+    let unsubCloud: (() => void) | null = null;
+    const unsubAuth = subscribeFirebaseAuth((fbUser) => {
+      if (unsubCloud) {
+        unsubCloud();
+        unsubCloud = null;
+      }
+
+      if (isVerifiedFirebaseUser(fbUser)) {
+        apiService.setCloudAuthContext(fbUser);
+        unsubCloud = subscribeCloudData(
+          fbUser,
+          (payload) => {
+            apiService.setCloudSyncData(payload);
+          },
+          (err) => {
+            console.warn('Firestore live listener notice:', err.message);
+          }
+        );
+        // Automatically flush any queued offline student attempts
+        apiService.flushPendingAttempts(StorageService.getCurrentUser() || undefined).catch(() => {});
+      } else {
+        apiService.setCloudAuthContext(null);
+      }
+    });
+
+    return () => {
+      unsubAuth();
+      if (unsubCloud) unsubCloud();
+    };
+  }, []);
 
   // Discreet teacher portal trigger via URL path /admin, query param (?portal=teacher / ?admin=login) or secret shortcut (Alt+Shift+T / Ctrl+Shift+A)
   React.useEffect(() => {
@@ -600,8 +639,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <LanguageProvider>
-      <AppContent />
-    </LanguageProvider>
+    <ErrorBoundary>
+      <LanguageProvider>
+        <AppContent />
+      </LanguageProvider>
+    </ErrorBoundary>
   );
 }

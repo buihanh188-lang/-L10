@@ -47,6 +47,32 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
 
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState(() => apiService.getCloudSyncStatus());
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
+
+  React.useEffect(() => {
+    return apiService.subscribeToDataChanges(() => {
+      setCloudStatus(apiService.getCloudSyncStatus());
+    });
+  }, []);
+
+  const handleConnectGoogle = async () => {
+    setConnectingGoogle(true);
+    setError('');
+    try {
+      await apiService.connectStudentGoogleAccount(null);
+      setCloudStatus(apiService.getCloudSyncStatus());
+    } catch (err: any) {
+      setError(
+        err?.message ||
+          (isEn
+            ? 'Could not connect Google account. Please try again.'
+            : 'Chưa kết nối được tài khoản Google. Em vui lòng thử lại.')
+      );
+    } finally {
+      setConnectingGoogle(false);
+    }
+  };
 
   // Quick autofill for sample official test accounts
   const handleAutofill = (code: string) => {
@@ -256,6 +282,45 @@ export const StudentWelcomeScreen: React.FC<StudentWelcomeScreenProps> = ({
                 ? 'Select your method to save personal results, track progress, and view rankings.'
                 : 'Lựa chọn phương thức tham gia học tập phù hợp để lưu kết quả và xếp hạng tiến bộ.'}
             </p>
+          </div>
+
+          {/* Google Cloud Auto-Sync Strip for Students */}
+          <div className="px-5 py-3 bg-emerald-50/90 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2.5">
+            {cloudStatus.connected ? (
+              <div className="flex items-center gap-2 text-xs text-emerald-900 font-semibold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  {isEn
+                    ? `Google Connected (${cloudStatus.email}) — Scores auto-send to Ms. Hanh!`
+                    : `Đã kết nối Google (${cloudStatus.email}) — Nộp bài là điểm tự gửi về cô Hạnh!`}
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="text-xs text-emerald-950 font-medium leading-snug">
+                  <strong className="font-bold">
+                    {isEn ? 'Auto-Submit Scores:' : 'Gửi điểm tự động về cô Hạnh:'}
+                  </strong>{' '}
+                  {isEn
+                    ? 'Connect Google once so your scores sync straight to your teacher.'
+                    : 'Kết nối Gmail 1 lần để nộp bài là điểm tự động chuyển về Trang quản trị của cô.'}
+                </div>
+                <button
+                  type="button"
+                  disabled={connectingGoogle}
+                  onClick={handleConnectGoogle}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {connectingGoogle
+                    ? isEn
+                      ? 'Connecting...'
+                      : 'Đang kết nối...'
+                    : isEn
+                      ? 'Connect Google'
+                      : 'Kết nối Google'}
+                </button>
+              </>
+            )}
           </div>
 
           {/* Tab Selector */}

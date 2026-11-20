@@ -699,29 +699,37 @@ export const VideoLectureManager: React.FC = () => {
     }
   };
 
-  const handleExportBackupJson = async () => {
+  const handleExportDefaultLessonsJson = async () => {
     setExportingBackup(true);
     try {
-      const backup = await apiService.exportExternalVideoLinks();
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
+      const config = await apiService.exportDefaultLessonsConfig();
+      const blob = new Blob([JSON.stringify(config, null, 2) + '\n'], {
+        type: 'application/json;charset=utf-8',
+      });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const dateStr = new Date().toISOString().slice(0, 10);
       a.href = blobUrl;
-      a.download = `diali10-video-links-backup-${dateStr}.json`;
+      a.download = 'defaultLessons.json';
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(blobUrl);
       setActionBanner({
         type: 'success',
-        text: `Đã tải xuống tệp sao lưu JSON gồm ${backup.totalLinked} link video bền vững.`,
+        text: `Đã xuất file cấu hình defaultLessons.json (40 bài giảng, trong đó ${config.totalPublished} bài đã xuất bản, ${config.totalLinked} bài đã gắn link). Để mọi thiết bị xem được khi deploy Vercel, cô hãy chép đè tệp này vào src/data/defaultLessons.json rồi đẩy lại lên Vercel.`,
       });
     } catch (err: any) {
-      setActionBanner({ type: 'error', text: err?.message || 'Không thể xuất tệp sao lưu JSON.' });
+      setActionBanner({
+        type: 'error',
+        text: err?.message || 'Không thể xuất file cấu hình JSON.',
+      });
     } finally {
       setExportingBackup(false);
     }
+  };
+
+  const handleExportBackupJson = async () => {
+    await handleExportDefaultLessonsJson();
   };
 
   const handleImportBackupFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -981,14 +989,16 @@ export const VideoLectureManager: React.FC = () => {
               <span>TẠO KỊCH BẢN 40 BÀI</span>
             </button>
 
-            <button
-              onClick={handleBatchVideos}
-              disabled={Boolean(queue?.isRunning)}
-              className="px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
-            >
-              <Video className="w-3.5 h-3.5" />
-              <span>TẠO VIDEO HÀNG LOẠT 40 BÀI</span>
-            </button>
+            {capabilities?.sdkPackageVersion !== 'static-browser' && (
+              <button
+                onClick={handleBatchVideos}
+                disabled={Boolean(queue?.isRunning)}
+                className="px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+              >
+                <Video className="w-3.5 h-3.5" />
+                <span>TẠO VIDEO HÀNG LOẠT 40 BÀI</span>
+              </button>
+            )}
 
             <button
               onClick={() => setConfirmBulkApproveOpen(true)}
@@ -1010,10 +1020,25 @@ export const VideoLectureManager: React.FC = () => {
                 setBulkLinkModalOpen(true);
               }}
               className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
-              title="Gắn link Google Drive / YouTube / Kho lưu trữ cố định & Sao lưu JSON để không bao giờ mất video"
+              title="Gắn link Google Drive / YouTube / Kho lưu trữ cố định & Khôi phục từ JSON"
             >
               <Link2 className="w-3.5 h-3.5" />
-              <span>GẮN LINK 40 BÀI / SAO LƯU</span>
+              <span>GẮN LINK 40 BÀI / KHÔI PHỤC</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportDefaultLessonsJson}
+              disabled={exportingBackup}
+              className="px-3.5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+              title="Tải tệp defaultLessons.json gồm toàn bộ 40 bài giảng để nhúng mặc định khi deploy lên Vercel"
+            >
+              {exportingBackup ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileJson className="w-3.5 h-3.5" />
+              )}
+              <span>Xuất file cấu hình (JSON)</span>
             </button>
 
             <button
@@ -1026,8 +1051,28 @@ export const VideoLectureManager: React.FC = () => {
           </div>
         </div>
 
-        {/* Honest Capability Check Banner */}
-        {capabilities && capabilities.missingRequirements.length > 0 ? (
+        {/* Environment Status Banner */}
+        {capabilities?.sdkPackageVersion === 'static-browser' ? (
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-1.5 text-xs text-emerald-950">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center space-x-2 font-extrabold text-emerald-900">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  CHẾ ĐỘ CHẠY TRỰC TIẾP TRÊN TRÌNH DUYỆT (SẴN SÀNG CHO VERCEL – KHÔNG CẦN MÁY CHỦ)
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-700">
+                Lưu trữ: localStorage + defaultLessons.json
+              </span>
+            </div>
+            <p className="text-emerald-900/90 leading-relaxed">
+              Để học sinh trên mọi thiết bị xem được video bài giảng mượt mà trên Vercel: (1) Cô bấm{' '}
+              <strong>Gắn link 40 bài / Khôi phục</strong> để dán link Google Drive / YouTube và xuất bản; (2) Bấm{' '}
+              <strong>Xuất file cấu hình (JSON)</strong> tải tệp <code>defaultLessons.json</code> thay vào{' '}
+              <code>src/data/defaultLessons.json</code> rồi đẩy lên GitHub / Vercel.
+            </p>
+          </div>
+        ) : capabilities && capabilities.missingRequirements.length > 0 ? (
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 space-y-2">
             <div className="flex items-center space-x-2 text-amber-950 font-extrabold text-xs sm:text-sm">
               <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />

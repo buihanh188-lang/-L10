@@ -171,7 +171,11 @@ export const LessonVideoPlayer: React.FC<LessonVideoPlayerProps> = ({
       : videoMeta?.provider === 'youtube'
       ? 'YouTube'
       : videoMeta?.provider === 'direct_url'
-      ? isEn
+      ? videoMeta?.videoUrl?.startsWith('/videos/')
+        ? isEn
+          ? 'Built-in Video'
+          : 'Video bài giảng MP4'
+        : isEn
         ? 'Cloud Video'
         : 'Kho lưu trữ đám mây'
       : null;

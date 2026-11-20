@@ -24,6 +24,7 @@ import { getLocalizedTopic } from '../data/bilingualCurriculum';
 import { localizeExamTitle } from '../services/bilingualQuestions';
 import { useLanguage } from '../contexts/LanguageContext';
 import { copyTextToClipboard, formatResultSlip } from '../utils/resultSlip';
+import { apiService } from '../services/api';
 
 interface StudentStatsProps {
   currentUser: UserProfile;
@@ -38,6 +39,11 @@ export const StudentStats: React.FC<StudentStatsProps> = ({
   const { language, t } = useLanguage();
   const isEn = language === 'en';
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [, setSyncTick] = useState(0);
+
+  React.useEffect(() => {
+    return apiService.subscribeToDataChanges(() => setSyncTick((n) => n + 1));
+  }, []);
 
   const allRecords = StorageService.getStudentRecords(currentUser.id);
 

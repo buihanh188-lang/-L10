@@ -33,6 +33,20 @@ import {
   parseAndNormalizeExternalVideoUrl,
   parseDurationInput,
 } from '../utils/videoLinks';
+import defaultLessonsConfig from '../data/defaultLessons.json';
+import {
+  auth,
+  deleteAttemptFromCloud,
+  fetchCloudDataOnce,
+  isTeacherFirebaseUser,
+  isVerifiedFirebaseUser,
+  sanitizeFirestoreId,
+  signInWithGooglePopup,
+  signOutFirebase,
+  syncAttemptToCloud,
+  syncStudentProfileToCloud,
+  TEACHER_ADMIN_EMAIL,
+} from './firebase';
 
 const TEACHER_TOKEN_KEY = 'dia_li_10_teacher_token';
 const PENDING_ATTEMPTS_KEY = 'dia_li_10_pending_attempts';
@@ -44,6 +58,7 @@ const CLASSES_KEY = 'dia_li_10_classes';
 const QUESTIONS_KEY = 'dia_li_10_questions';
 const TEACHER_EXAMS_KEY = 'dia_li_10_teacher_exams';
 const VIDEO_CATALOG_KEY = 'dia_li_10_video_catalog_v1';
+const VIDEO_CATALOG_DEFAULT_SYNC_KEY = 'dia_li_10_video_catalog_default_sync_v1';
 
 const DEFAULT_TEACHER_USER: UserProfile = {
   id: 'teacher-bui-thi-hong-hanh',
@@ -133,10 +148,8 @@ function defaultVideoCapabilities(): VideoCapabilities {
       video: 'external-link',
     },
     paidTierRequiredForMedia: false,
-    missingRequirements: [
-      'Ứng dụng đang chạy ở chế độ Frontend tĩnh (Vercel / localStorage). Hãy dùng tính năng "Gắn link video ngoài" (Google Drive / YouTube / MP4) để học sinh xem video trực tiếp.',
-    ],
-    storageDir: 'browser://localStorage',
+    missingRequirements: [],
+    storageDir: 'browser://localStorage + defaultLessons.json',
   };
 }
 
@@ -173,6 +186,117 @@ function makeBaseVideoRecord(lesson: (typeof LESSONS)[number]): LessonVideoRecor
 }
 
 class ApiService {
+  private cloudAttempts: ExamRecord[] = [];
+  private cloudStudents: UserProfile[] = [];
+  private cloudConnected = false;
+  private cloudUserEmail: string | null = null;
+  private cloudIsTeacher = false;
+  private dataListeners = new Set<() => void>();
+
+  subscribeToDataChanges(listener: () => void): () => void {
+    this.dataListeners.add(listener);
+    return () => {
+      this.dataListeners.delete(listener);
+    };
+  }
+
+  private emitDataChanged(): void {
+    this.dataListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (e) {
+        console.error('Data listener error:', e);
+      }
+    });
+  }
+
+  setCloudAuthContext(user: { uid: string; email?: string | null; emailVerified?: boolean } | null): void {
+    if (user && user.uid && user.emailVerified) {
+      this.cloudConnected = true;
+      this.cloudUserEmail = user.email || null;
+      this.cloudIsTeacher =
+        Boolean(user.email && user.email.toLowerCase() === TEACHER_ADMIN_EMAIL);
+    } else {
+      this.cloudConnected = false;
+      this.cloudUserEmail = null;
+      this.cloudIsTeacher = false;
+      this.cloudAttempts = [];
+      this.cloudStudents = [];
+    }
+    this.emitDataChanged();
+  }
+
+  setCloudSyncData(payload: { attempts?: ExamRecord[]; students?: UserProfile[] }): void {
+    if (payload.attempts) {
+      this.cloudAttempts = payload.attempts;
+      // Merge cloud attempts into localStorage cache so offline views remain warm
+      const localMap = new Map<string, ExamRecord>();
+      try {
+        const raw = safeGetItem(EXAM_RECORDS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          parsed.forEach((r: ExamRecord) => {
+            if (r && r.id) localMap.set(r.id, r);
+          });
+        }
+      } catch {
+        // ignore
+      }
+      payload.attempts.forEach((r) => {
+        if (r && r.id) {
+          localMap.set(r.id, r);
+          this.ensureClassExistsLocal(r.className, r.schoolName);
+        }
+      });
+      this.saveLocalAttemptsList(Array.from(localMap.values()));
+    }
+
+    if (payload.students) {
+      this.cloudStudents = payload.students;
+      payload.students.forEach((st) => {
+        if (st && st.className) {
+          this.ensureClassExistsLocal(st.className, st.school);
+        }
+      });
+    }
+
+    this.emitDataChanged();
+  }
+
+  getCloudSyncStatus(): {
+    connected: boolean;
+    email: string | null;
+    isTeacher: boolean;
+    cloudAttemptCount: number;
+    cloudStudentCount: number;
+    pendingCount: number;
+  } {
+    const current = auth.currentUser;
+    const connected = isVerifiedFirebaseUser(current) || this.cloudConnected;
+    return {
+      connected,
+      email: current?.email || this.cloudUserEmail,
+      isTeacher: isTeacherFirebaseUser(current) || this.cloudIsTeacher,
+      cloudAttemptCount: this.cloudAttempts.length,
+      cloudStudentCount: this.cloudStudents.length,
+      pendingCount: this.getPendingAttempts().length,
+    };
+  }
+
+  async refreshCloudData(): Promise<boolean> {
+    try {
+      const snap = await fetchCloudDataOnce();
+      if (snap) {
+        this.setCloudSyncData(snap);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.warn('refreshCloudData failed:', e);
+      return false;
+    }
+  }
+
   private msg(vi: string, en: string): string {
     try {
       return safeGetItem('dia_li_10_language') === 'en' ? en : vi;
@@ -290,6 +414,20 @@ class ApiService {
       console.error('Error reading students from localStorage:', e);
     }
 
+    // Overlay synced cloud students from Firestore
+    this.cloudStudents.forEach((st) => {
+      if (st && st.id && !deleted.has(st.id)) {
+        const existing = map.get(st.id);
+        map.set(st.id, {
+          ...(existing || {}),
+          ...st,
+          studentType:
+            st.studentType ||
+            (normalizeSchoolKey(st.school) === OFFICIAL_SCHOOL_KEY ? 'official' : 'extended'),
+        });
+      }
+    });
+
     return Array.from(map.values());
   }
 
@@ -357,16 +495,33 @@ class ApiService {
   }
 
   private getLocalAttempts(): ExamRecord[] {
+    const byId = new Map<string, ExamRecord>();
+    let hasStored = false;
     try {
       const raw = safeGetItem(EXAM_RECORDS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          hasStored = true;
+          parsed.forEach((r: ExamRecord) => {
+            if (r && r.id) byId.set(r.id, r);
+          });
+        }
       }
     } catch (e) {
       console.error(e);
     }
-    return [...INITIAL_EXAM_RECORDS];
+
+    if (!hasStored && this.cloudAttempts.length === 0) {
+      INITIAL_EXAM_RECORDS.forEach((r) => byId.set(r.id, r));
+    }
+
+    // Cloud Firestore attempts take precedence and stay live across all devices
+    this.cloudAttempts.forEach((r) => {
+      if (r && r.id) byId.set(r.id, r);
+    });
+
+    return Array.from(byId.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }
 
   private saveLocalAttemptsList(list: ExamRecord[]): void {
@@ -481,8 +636,67 @@ class ApiService {
     return { success: true, token, user };
   }
 
+  async teacherLoginWithGoogle(): Promise<{ success: boolean; token: string; user: UserProfile }> {
+    const fbUser = await signInWithGooglePopup();
+    if (!isTeacherFirebaseUser(fbUser)) {
+      await signOutFirebase();
+      throw new Error(
+        this.msg(
+          `Tài khoản Google "${fbUser.email || ''}" không phải tài khoản giáo viên quản trị (${TEACHER_ADMIN_EMAIL}). Vui lòng chọn đúng Gmail của cô Bùi Thị Hồng Hạnh.`,
+          `Google account "${fbUser.email || ''}" is not authorized as teacher admin (${TEACHER_ADMIN_EMAIL}).`
+        )
+      );
+    }
+
+    const token = `firebase-teacher-${fbUser.uid}-${Date.now()}`;
+    const user: UserProfile = {
+      ...DEFAULT_TEACHER_USER,
+      email: fbUser.email || DEFAULT_TEACHER_USER.email,
+      lastLoginAt: new Date().toISOString(),
+    };
+    this.setTeacherToken(token);
+    this.setCloudAuthContext(fbUser);
+    await this.refreshCloudData();
+    return { success: true, token, user };
+  }
+
+  async connectStudentGoogleAccount(
+    profile?: UserProfile | null
+  ): Promise<{ email: string; uid: string; syncedPending: number }> {
+    const fbUser = await signInWithGooglePopup();
+    if (!isVerifiedFirebaseUser(fbUser)) {
+      throw new Error(
+        this.msg(
+          'Tài khoản Google chưa xác minh email. Vui lòng chọn tài khoản Gmail hợp lệ.',
+          'Google account email is not verified.'
+        )
+      );
+    }
+
+    this.setCloudAuthContext(fbUser);
+
+    if (profile && profile.role === 'student') {
+      try {
+        await syncStudentProfileToCloud(profile);
+      } catch (e) {
+        console.warn('Could not sync student profile on Google connect:', e);
+      }
+    }
+
+    const flushed = await this.flushPendingAttempts(profile || undefined);
+    await this.refreshCloudData();
+
+    return {
+      email: fbUser.email || '',
+      uid: fbUser.uid,
+      syncedPending: flushed.synced,
+    };
+  }
+
   async teacherLogout(): Promise<void> {
     this.setTeacherToken(null);
+    await signOutFirebase();
+    this.setCloudAuthContext(null);
   }
 
   async verifyTeacherSession(): Promise<boolean> {
@@ -1033,12 +1247,29 @@ class ApiService {
   }
 
   // =========================================================================
-  // 6. SUBMIT ATTEMPT & ZALO SLIP IMPORT (100% LOCALSTORAGE)
+  // 6. SUBMIT ATTEMPT (FIREBASE CLOUD + LOCALSTORAGE OFFLINE FALLBACK)
   // =========================================================================
-  async submitAttemptStrict(record: ExamRecord, user?: UserProfile): Promise<ExamRecord> {
+  private addPendingAttempt(record: ExamRecord): void {
+    try {
+      const pending = this.getPendingAttempts().filter((r) => r && r.id !== record.id);
+      pending.unshift(record);
+      safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(pending.slice(0, 50)));
+    } catch {
+      // ignore
+    }
+  }
+
+  async submitAttemptStrict(
+    record: ExamRecord,
+    user?: UserProfile
+  ): Promise<ExamRecord & { cloudSynced?: boolean }> {
+    const safeId = sanitizeFirestoreId(
+      record.id || `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      'rec'
+    );
     const normalizedRecord: ExamRecord = {
       ...record,
-      id: record.id || `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: safeId,
       studentName: normalizeStudentName(record.studentName || user?.name || 'Học sinh'),
       schoolName: normalizeSchoolName(record.schoolName || user?.school || 'TRƯỜNG THPT HÒA BÌNH'),
       className: normalizeClassName(record.className || user?.className || '10A1'),
@@ -1047,10 +1278,8 @@ class ApiService {
     };
 
     this.saveLocalAttempt(normalizedRecord);
-    this.removePendingAttempt(normalizedRecord.id);
 
-    // Ensure student & class are registered in localStorage
-    this.upsertStudentLocal({
+    const studentProfile: UserProfile = {
       id: normalizedRecord.studentId || user?.id || `hs-${Date.now()}`,
       role: 'student',
       name: normalizedRecord.studentName,
@@ -1066,10 +1295,33 @@ class ApiService {
       joinedDate: user?.joinedDate || new Date().toISOString().slice(0, 10),
       isActivated: true,
       lastLoginAt: new Date().toISOString(),
-    });
+    };
+
+    // Ensure student & class are registered in localStorage
+    this.upsertStudentLocal(studentProfile);
     this.ensureClassExistsLocal(normalizedRecord.className, normalizedRecord.schoolName);
 
-    return normalizedRecord;
+    let cloudSynced = false;
+    if (isVerifiedFirebaseUser(auth.currentUser)) {
+      try {
+        const res = await syncAttemptToCloud(normalizedRecord, studentProfile);
+        cloudSynced = res.synced;
+        if (cloudSynced) {
+          this.removePendingAttempt(normalizedRecord.id);
+        } else {
+          this.addPendingAttempt(normalizedRecord);
+        }
+      } catch (e) {
+        console.warn('Cloud sync failed, queued in pending attempts:', e);
+        this.addPendingAttempt(normalizedRecord);
+      }
+    } else {
+      // Queue until student signs in with Google (1-click sync on result screen)
+      this.addPendingAttempt(normalizedRecord);
+    }
+
+    this.emitDataChanged();
+    return Object.assign({}, normalizedRecord, { cloudSynced });
   }
 
   async submitAttempt(record: ExamRecord, user?: UserProfile): Promise<ExamRecord> {
@@ -1087,35 +1339,44 @@ class ApiService {
     let duplicateCount = 0;
 
     const merged = [...existing];
+    const newlyImported: ExamRecord[] = [];
     for (const rec of records) {
-      if (existingIds.has(rec.id)) {
+      const safeId = sanitizeFirestoreId(rec.id, 'zalo');
+      const cleanRec: ExamRecord = { ...rec, id: safeId };
+      if (existingIds.has(cleanRec.id)) {
         duplicateCount++;
         continue;
       }
-      existingIds.add(rec.id);
-      merged.unshift(rec);
+      existingIds.add(cleanRec.id);
+      merged.unshift(cleanRec);
+      newlyImported.push(cleanRec);
       importedCount++;
 
       // Register student & class cleanly
       this.upsertStudentLocal({
-        id: rec.studentId,
+        id: cleanRec.studentId,
         role: 'student',
-        name: rec.studentName,
-        code: rec.studentCode,
-        className: rec.className,
-        school: rec.schoolName,
+        name: cleanRec.studentName,
+        code: cleanRec.studentCode,
+        className: cleanRec.className,
+        school: cleanRec.schoolName,
         province: 'TỈNH LẠNG SƠN',
         studentType:
-          normalizeSchoolKey(rec.schoolName) === OFFICIAL_SCHOOL_KEY ? 'official' : 'extended',
-        joinedDate: new Date(rec.timestamp || Date.now()).toISOString().slice(0, 10),
+          normalizeSchoolKey(cleanRec.schoolName) === OFFICIAL_SCHOOL_KEY ? 'official' : 'extended',
+        joinedDate: new Date(cleanRec.timestamp || Date.now()).toISOString().slice(0, 10),
         isActivated: true,
-        lastLoginAt: new Date(rec.timestamp || Date.now()).toISOString(),
+        lastLoginAt: new Date(cleanRec.timestamp || Date.now()).toISOString(),
       });
-      this.ensureClassExistsLocal(rec.className, rec.schoolName);
+      this.ensureClassExistsLocal(cleanRec.className, cleanRec.schoolName);
     }
 
     if (importedCount > 0) {
       this.saveLocalAttemptsList(merged);
+      if (isVerifiedFirebaseUser(auth.currentUser)) {
+        // Mirror teacher-imported records to Firestore in background
+        Promise.allSettled(newlyImported.map((r) => syncAttemptToCloud(r))).catch(() => {});
+      }
+      this.emitDataChanged();
     }
 
     return {
@@ -1126,8 +1387,15 @@ class ApiService {
   }
 
   deleteExamRecord(recordId: string): ExamRecord[] {
+    this.cloudAttempts = this.cloudAttempts.filter((r) => r.id !== recordId);
     const updated = this.getLocalAttempts().filter((r) => r.id !== recordId);
     this.saveLocalAttemptsList(updated);
+    if (isTeacherFirebaseUser(auth.currentUser)) {
+      deleteAttemptFromCloud(recordId).catch((e) =>
+        console.warn('Cloud delete attempt warning:', e)
+      );
+    }
+    this.emitDataChanged();
     return updated;
   }
 
@@ -1156,14 +1424,31 @@ class ApiService {
   async flushPendingAttempts(user?: UserProfile): Promise<{ synced: number; failed: number }> {
     const pending = this.getPendingAttempts();
     if (pending.length === 0) return { synced: 0, failed: 0 };
+    if (!isVerifiedFirebaseUser(auth.currentUser)) {
+      return { synced: 0, failed: pending.length };
+    }
 
     let synced = 0;
+    let failed = 0;
+    const stillPending: ExamRecord[] = [];
     for (const item of pending) {
-      await this.submitAttemptStrict(item, user);
-      synced++;
+      try {
+        const res = await syncAttemptToCloud(item, user);
+        if (res.synced) {
+          synced++;
+        } else {
+          failed++;
+          stillPending.push(item);
+        }
+      } catch (e) {
+        console.warn('Pending attempt sync failed:', e);
+        failed++;
+        stillPending.push(item);
+      }
     }
-    safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify([]));
-    return { synced, failed: 0 };
+    safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(stillPending));
+    if (synced > 0) this.emitDataChanged();
+    return { synced, failed };
   }
 
   // =========================================================================
@@ -1723,17 +2008,126 @@ class ApiService {
   // =========================================================================
   // 14. VIDEO LECTURE SYSTEM (100% LOCALSTORAGE EXTERNAL LINKS & SCRIPTS)
   // =========================================================================
+  private buildDefaultVideoRecordsMap(): Record<string, Partial<LessonVideoRecord>> {
+    const result: Record<string, Partial<LessonVideoRecord>> = {};
+    const cfg: any = defaultLessonsConfig || {};
+    const now = Date.now();
+
+    const applyEntry = (lessonId: string, entry: any) => {
+      if (!lessonId || !entry || typeof entry !== 'object') return;
+      const rawUrl = String(entry.rawUrl || entry.videoUrl || entry.normalizedUrl || '').trim();
+      if (!rawUrl) return;
+      const parsed = parseAndNormalizeExternalVideoUrl(rawUrl);
+      if (!parsed.valid) return;
+
+      const dur = parseDurationInput(entry.durationSeconds) ?? 420;
+      const isPublished = entry.isPublished !== false;
+      const isApproved = entry.isApproved !== false && isPublished;
+      const subtitleUrl =
+        typeof entry.subtitleUrl === 'string' && entry.subtitleUrl.trim()
+          ? entry.subtitleUrl.trim()
+          : null;
+
+      result[lessonId] = {
+        lessonId,
+        status: 'completed',
+        currentStep: 'ready_for_approval',
+        stepMessage: isPublished ? 'Đã xuất bản' : 'Đã gắn video bài giảng',
+        progressPercent: 100,
+        durationSeconds: dur,
+        videoUrl: parsed.normalizedUrl,
+        subtitleUrl,
+        version: Number(entry.version) || 1,
+        externalVideo: {
+          rawUrl: parsed.rawUrl,
+          normalizedUrl: parsed.normalizedUrl,
+          provider: parsed.provider,
+          playbackType: parsed.playbackType,
+          subtitleUrl,
+          durationSeconds: dur,
+          note: String(entry.note || ''),
+          updatedAt: now,
+        },
+        isApproved,
+        isPublished,
+        approvedAt: entry.approvedAt || (isPublished ? cfg.exportedAt || new Date().toISOString() : null),
+        approvedBy: entry.approvedBy || (isPublished ? DEFAULT_TEACHER_USER.name : null),
+        updatedAt: now,
+        createdAt: now,
+      };
+    };
+
+    if (Array.isArray(cfg.lessons)) {
+      cfg.lessons.forEach((item: any) => {
+        if (item && item.lessonId) applyEntry(String(item.lessonId), item);
+      });
+    } else if (cfg.links && typeof cfg.links === 'object') {
+      Object.entries<any>(cfg.links).forEach(([lessonId, item]) => {
+        applyEntry(lessonId, typeof item === 'string' ? { rawUrl: item, isPublished: true } : item);
+      });
+    }
+
+    return result;
+  }
+
+  private getDefaultLessonsSyncStamp(): string {
+    const cfg: any = defaultLessonsConfig || {};
+    const lessonsArr = Array.isArray(cfg.lessons) ? cfg.lessons : [];
+    const activeCount = lessonsArr.filter(
+      (l: any) => l && String(l.rawUrl || l.videoUrl || '').trim().length > 0
+    ).length;
+    return `${cfg.exportedAt || ''}|v${cfg.version || 1}|n${activeCount}`;
+  }
+
   private loadVideoRecordsMap(): Record<string, Partial<LessonVideoRecord>> {
+    const defaults = this.buildDefaultVideoRecordsMap();
+    const hasDefaults = Object.keys(defaults).length > 0;
+    const syncStamp = this.getDefaultLessonsSyncStamp();
+
+    let stored: Record<string, Partial<LessonVideoRecord>> | null = null;
     try {
       const raw = safeGetItem(VIDEO_CATALOG_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') return parsed;
+        if (parsed && typeof parsed === 'object') stored = parsed;
       }
     } catch {
       // ignore
     }
-    return {};
+
+    // First launch or brand new device with no localStorage data: auto-seed from defaultLessons.json
+    if (!stored || Object.keys(stored).length === 0) {
+      if (hasDefaults) {
+        safeSetItem(VIDEO_CATALOG_KEY, JSON.stringify(defaults));
+        safeSetItem(VIDEO_CATALOG_DEFAULT_SYNC_KEY, syncStamp);
+        return defaults;
+      }
+      return {};
+    }
+
+    // If defaultLessons.json was updated in a new Vercel deploy, merge any newly published default lessons
+    // without overwriting lessons the teacher explicitly edited on this device
+    if (hasDefaults) {
+      const lastSynced = safeGetItem(VIDEO_CATALOG_DEFAULT_SYNC_KEY);
+      if (lastSynced !== syncStamp) {
+        let changed = false;
+        const merged: Record<string, Partial<LessonVideoRecord>> = { ...stored };
+        for (const [lessonId, defRec] of Object.entries(defaults)) {
+          const cur = merged[lessonId];
+          if (!cur || (!cur.externalVideo?.normalizedUrl && !cur.videoUrl)) {
+            merged[lessonId] = defRec;
+            changed = true;
+          }
+        }
+        if (changed) {
+          safeSetItem(VIDEO_CATALOG_KEY, JSON.stringify(merged));
+        }
+        safeSetItem(VIDEO_CATALOG_DEFAULT_SYNC_KEY, syncStamp);
+        return merged;
+      }
+    }
+
+    return stored;
   }
 
   private saveVideoRecordsMap(map: Record<string, Partial<LessonVideoRecord>>): void {
@@ -2008,6 +2402,7 @@ class ApiService {
     lessonId: string,
     payload: {
       rawUrl: string;
+      subtitleUrl?: string | null;
       durationSeconds?: number | string | null;
       note?: string;
       autoApprove?: boolean;
@@ -2020,31 +2415,42 @@ class ApiService {
     const dur = parseDurationInput(payload.durationSeconds) ?? 420;
     const autoApprove = payload.autoApprove ?? true;
 
-    return this.updateSingleVideoRecord(lessonId, (cur) => ({
-      ...cur,
-      status: 'completed',
-      currentStep: 'ready_for_approval',
-      stepMessage: autoApprove ? 'Đã gắn link và xuất bản' : 'Đã gắn link video ngoài',
-      progressPercent: 100,
-      durationSeconds: dur,
-      videoUrl: parsed.normalizedUrl,
-      version: (cur.version || 0) + 1,
-      externalVideo: {
-        rawUrl: parsed.rawUrl,
-        normalizedUrl: parsed.normalizedUrl,
-        provider: parsed.provider,
-        playbackType: parsed.playbackType,
+    return this.updateSingleVideoRecord(lessonId, (cur) => {
+      const nextSubtitleUrl =
+        payload.subtitleUrl !== undefined
+          ? payload.subtitleUrl
+          : parsed.normalizedUrl.startsWith('/videos/')
+          ? cur.subtitleUrl ?? `/videos/${lessonId}.vtt`
+          : null;
+
+      return {
+        ...cur,
+        status: 'completed',
+        currentStep: 'ready_for_approval',
+        stepMessage: autoApprove ? 'Đã gắn link và xuất bản' : 'Đã gắn link video ngoài',
+        progressPercent: 100,
         durationSeconds: dur,
-        note: payload.note || '',
+        videoUrl: parsed.normalizedUrl,
+        subtitleUrl: nextSubtitleUrl,
+        version: (cur.version || 0) + 1,
+        externalVideo: {
+          rawUrl: parsed.rawUrl,
+          normalizedUrl: parsed.normalizedUrl,
+          provider: parsed.provider,
+          playbackType: parsed.playbackType,
+          subtitleUrl: nextSubtitleUrl,
+          durationSeconds: dur,
+          note: payload.note || '',
+          updatedAt: Date.now(),
+        },
+        isApproved: autoApprove ? true : cur.isApproved,
+        isPublished: autoApprove ? true : cur.isPublished,
+        approvedAt: autoApprove ? new Date().toISOString() : cur.approvedAt,
+        approvedBy: autoApprove ? DEFAULT_TEACHER_USER.name : cur.approvedBy,
         updatedAt: Date.now(),
-      },
-      isApproved: autoApprove ? true : cur.isApproved,
-      isPublished: autoApprove ? true : cur.isPublished,
-      approvedAt: autoApprove ? new Date().toISOString() : cur.approvedAt,
-      approvedBy: autoApprove ? DEFAULT_TEACHER_USER.name : cur.approvedBy,
-      updatedAt: Date.now(),
-      createdAt: cur.createdAt || Date.now(),
-    }));
+        createdAt: cur.createdAt || Date.now(),
+      };
+    });
   }
 
   async removeLessonExternalVideoLink(lessonId: string): Promise<LessonVideoRecord> {
@@ -2101,6 +2507,71 @@ class ApiService {
     };
   }
 
+  async exportDefaultLessonsConfig(): Promise<{
+    schema: string;
+    version: number;
+    exportedAt: string;
+    description: string;
+    totalLessons: number;
+    totalLinked: number;
+    totalPublished: number;
+    lessons: Array<{
+      lessonId: string;
+      lessonNumber: number;
+      lessonTitle: string;
+      rawUrl: string;
+      videoUrl: string;
+      subtitleUrl: string | null;
+      provider: string | null;
+      playbackType: string | null;
+      durationSeconds: number | null;
+      note: string;
+      isApproved: boolean;
+      isPublished: boolean;
+      approvedAt: string | null;
+      approvedBy: string | null;
+    }>;
+  }> {
+    const records = this.getAllVideoRecordsLocal();
+    const lessons = records.map((r) => {
+      const rawUrl = r.externalVideo?.rawUrl || r.videoUrl || '';
+      const videoUrl = r.externalVideo?.normalizedUrl || r.videoUrl || '';
+      const subtitleUrl = r.externalVideo?.subtitleUrl ?? r.subtitleUrl ?? null;
+      const hasUrl = Boolean(rawUrl || videoUrl);
+      return {
+        lessonId: r.lessonId,
+        lessonNumber: r.lessonNumber,
+        lessonTitle: r.lessonTitle,
+        rawUrl,
+        videoUrl,
+        subtitleUrl: hasUrl ? subtitleUrl : null,
+        provider: r.externalVideo?.provider ?? null,
+        playbackType: r.externalVideo?.playbackType ?? null,
+        durationSeconds: r.externalVideo?.durationSeconds ?? r.durationSeconds ?? null,
+        note: r.externalVideo?.note || '',
+        isApproved: hasUrl ? Boolean(r.isApproved) : false,
+        isPublished: hasUrl ? Boolean(r.isPublished) : false,
+        approvedAt: hasUrl ? r.approvedAt : null,
+        approvedBy: hasUrl ? r.approvedBy : null,
+      };
+    });
+
+    const totalLinked = lessons.filter((l) => Boolean(l.rawUrl || l.videoUrl)).length;
+    const totalPublished = lessons.filter((l) => l.isPublished && Boolean(l.rawUrl || l.videoUrl)).length;
+
+    return {
+      schema: 'diali10-default-lessons-v1',
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      description:
+        'File cấu hình mặc định 40 bài giảng video Địa Lí 10. Thay thế tệp src/data/defaultLessons.json bằng tệp này trước khi deploy lên Vercel để mọi thiết bị học sinh tự động hiển thị video Đã xuất bản.',
+      totalLessons: lessons.length,
+      totalLinked,
+      totalPublished,
+      lessons,
+    };
+  }
+
   async exportExternalVideoLinks(): Promise<{
     schema: string;
     exportedAt: string;
@@ -2141,17 +2612,33 @@ class ApiService {
     records: LessonVideoRecord[];
     queue: VideoQueueState;
   }> {
-    const linksObj = backup?.links && typeof backup.links === 'object' ? backup.links : backup;
-    if (!linksObj || typeof linksObj !== 'object') {
-      throw new Error('Tệp JSON sao lưu không đúng định dạng.');
+    const entries: Array<{ lessonId: string; info: any }> = [];
+
+    if (Array.isArray(backup?.lessons)) {
+      backup.lessons.forEach((item: any) => {
+        if (item && item.lessonId) {
+          entries.push({ lessonId: String(item.lessonId), info: item });
+        }
+      });
+    } else {
+      const linksObj = backup?.links && typeof backup.links === 'object' ? backup.links : backup;
+      if (!linksObj || typeof linksObj !== 'object') {
+        throw new Error('Tệp JSON cấu hình không đúng định dạng.');
+      }
+      Object.entries<any>(linksObj).forEach(([lessonId, info]) => {
+        entries.push({ lessonId, info });
+      });
     }
 
     let importedCount = 0;
     let skippedCount = 0;
     const errors: Array<{ lessonId: string; message: string }> = [];
 
-    for (const [lessonId, info] of Object.entries<any>(linksObj)) {
-      const rawUrl = typeof info === 'string' ? info : info?.rawUrl || info?.normalizedUrl;
+    for (const { lessonId, info } of entries) {
+      const rawUrl =
+        typeof info === 'string'
+          ? info.trim()
+          : String(info?.rawUrl || info?.videoUrl || info?.normalizedUrl || '').trim();
       if (!rawUrl) {
         skippedCount++;
         continue;
@@ -2159,6 +2646,7 @@ class ApiService {
       try {
         await this.setLessonExternalVideoLink(lessonId, {
           rawUrl,
+          subtitleUrl: typeof info === 'object' ? info?.subtitleUrl ?? undefined : undefined,
           durationSeconds: typeof info === 'object' ? info?.durationSeconds : undefined,
           note: typeof info === 'object' ? info?.note : undefined,
           autoApprove: restoreApprovalState ? Boolean(info?.isPublished ?? true) : false,
@@ -2245,7 +2733,7 @@ class ApiService {
           lessonId: rec.lessonId,
           lessonTitle: rec.lessonTitle,
           videoUrl: rec.externalVideo.normalizedUrl,
-          subtitleUrl: rec.externalVideo.subtitleUrl ?? null,
+          subtitleUrl: rec.externalVideo.subtitleUrl ?? rec.subtitleUrl ?? null,
           thumbnailUrl: rec.thumbnailUrl ?? null,
           durationSeconds: rec.externalVideo.durationSeconds ?? rec.durationSeconds ?? 420,
           approvedAt: rec.approvedAt,

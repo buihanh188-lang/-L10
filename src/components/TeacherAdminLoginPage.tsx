@@ -117,6 +117,25 @@ export const TeacherAdminLoginPage: React.FC<TeacherAdminLoginPageProps> = ({
     }
   };
 
+  const handleGoogleTeacherLogin = async () => {
+    setIsSubmitting(true);
+    setLoginError('');
+    try {
+      const result = await apiService.teacherLoginWithGoogle();
+      StorageService.setCurrentUser(result.user);
+      onLoginSuccess(result.user);
+    } catch (err: any) {
+      setLoginError(
+        err?.message ||
+          (isEn
+            ? 'Google sign-in failed. Please select your teacher Gmail account (buihanh188@gmail.com).'
+            : 'Đăng nhập Google không thành công. Cô vui lòng chọn đúng Gmail giáo viên (buihanh188@gmail.com).')
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 lg:p-8 antialiased selection:bg-emerald-500 selection:text-white">
       {/* Top Header */}
@@ -185,9 +204,32 @@ export const TeacherAdminLoginPage: React.FC<TeacherAdminLoginPageProps> = ({
             <ShieldAlert className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
             <span>
               {isEn
-                ? 'Restricted area reserved for the subject teacher (Ms. Bui Thi Hong Hanh). Students are not permitted. All operations are authenticated directly via the server.'
-                : 'Khu vực bảo mật dành riêng cho Giáo viên bộ môn (Cô Bùi Thị Hồng Hạnh). Học sinh không được phép truy cập. Mọi yêu cầu được xác thực trực tiếp qua máy chủ.'}
+                ? 'Sign in with your teacher Google account (buihanh188@gmail.com) to automatically receive student scores in real time from Firebase Cloud.'
+                : 'Đăng nhập bằng tài khoản Google giáo viên (buihanh188@gmail.com) để tự động nhận toàn bộ điểm học sinh đồng bộ trực tiếp từ đám mây Firebase.'}
             </span>
+          </div>
+
+          {/* 1-Click Google Cloud Admin Sign-In */}
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={handleGoogleTeacherLogin}
+            className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-900 border-2 border-emerald-500 text-sm font-extrabold shadow-sm transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              {isEn
+                ? 'Sign in with Google (buihanh188@gmail.com)'
+                : 'Đăng nhập nhanh bằng Google (Tự động đồng bộ điểm)'}
+            </span>
+          </button>
+
+          <div className="relative flex items-center justify-center">
+            <div className="border-t border-slate-200 w-full" />
+            <span className="bg-white px-3 text-[11px] font-bold text-slate-400 uppercase shrink-0">
+              {isEn ? 'or use password' : 'hoặc dùng mật khẩu'}
+            </span>
+            <div className="border-t border-slate-200 w-full" />
           </div>
 
           {/* Form */}

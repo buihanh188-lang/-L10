@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Cloud,
   Copy,
   Home,
   RefreshCw,
@@ -26,6 +27,8 @@ import {
   localizeStoredAnswerText,
 } from '../services/bilingualQuestions';
 import { copyTextToClipboard, formatResultSlip } from '../utils/resultSlip';
+import { apiService } from '../services/api';
+import { StorageService } from '../services/storage';
 
 interface QuizResultViewProps {
   record: ExamRecord;
@@ -45,6 +48,46 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
   const [copiedSlip, setCopiedSlip] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [showSlipPreview, setShowSlipPreview] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState(() => apiService.getCloudSyncStatus());
+  const [syncingCloud, setSyncingCloud] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  const [justSynced, setJustSynced] = useState(false);
+
+  const isRecordPending = useMemo(
+    () => apiService.getPendingAttempts().some((p) => p.id === record.id),
+    [record.id, cloudStatus, justSynced]
+  );
+  const isSyncedToTeacher = (cloudStatus.connected && !isRecordPending) || justSynced;
+
+  useEffect(() => {
+    return apiService.subscribeToDataChanges(() => {
+      setCloudStatus(apiService.getCloudSyncStatus());
+    });
+  }, []);
+
+  const handleSyncToTeacherNow = async () => {
+    setSyncingCloud(true);
+    setSyncError('');
+    try {
+      const currentUser = StorageService.getCurrentUser();
+      if (!cloudStatus.connected) {
+        await apiService.connectStudentGoogleAccount(currentUser);
+      } else {
+        await apiService.flushPendingAttempts(currentUser || undefined);
+      }
+      setCloudStatus(apiService.getCloudSyncStatus());
+      setJustSynced(true);
+    } catch (err: any) {
+      setSyncError(
+        err?.message ||
+          (isEn
+            ? 'Could not sync with Google. Please try again or copy the Zalo backup slip.'
+            : 'Chưa gửi được qua Google. Em thử lại hoặc dùng nút Sao chép phiếu dự phòng nhé.')
+      );
+    } finally {
+      setSyncingCloud(false);
+    }
+  };
 
   const resultSlipText = useMemo(() => formatResultSlip(record), [record]);
 
@@ -206,29 +249,55 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-6">
-          <button
-            type="button"
-            onClick={handleCopyResultSlip}
-            className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-white text-xs sm:text-sm font-bold shadow-sm transition-all hover:scale-102 cursor-pointer ${
-              copiedSlip
-                ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25'
-                : 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/25'
-            }`}
-          >
-            {copiedSlip ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            <span>
-              {copiedSlip
-                ? isEn
-                  ? 'Result Slip Copied!'
-                  : 'Đã sao chép phiếu kết quả!'
-                : isEn
-                  ? 'Copy Result Slip (Zalo)'
-                  : 'Sao chép phiếu kết quả'}
-            </span>
-          </button>
+        {/* Automatic Firebase Cloud Sync Status */}
+        <div className="mt-5 max-w-xl mx-auto">
+          {isSyncedToTeacher ? (
+            <div className="px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold flex items-center justify-center gap-2">
+              <Cloud className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                {isEn
+                  ? 'Score automatically synced to Ms. Bui Thi Hong Hanh’s Teacher Dashboard!'
+                  : 'Điểm bài làm đã tự động gửi thẳng về Trang quản trị của cô Bùi Thị Hồng Hạnh!'}
+              </span>
+            </div>
+          ) : (
+            <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-xs text-blue-950">
+                <div className="font-extrabold flex items-center gap-1.5">
+                  <Cloud className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    {isEn
+                      ? 'Send score directly to teacher (no Zalo needed)'
+                      : 'Gửi điểm tự động về Trang quản trị của cô Hạnh'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-blue-800 mt-0.5">
+                  {syncError ||
+                    (isEn
+                      ? 'Sign in with Google once to upload this score straight to the teacher gradebook.'
+                      : 'Đăng nhập Gmail 1 lần để điểm tự động cập nhật vào bảng điểm của cô (không cần gửi Zalo).')}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={syncingCloud}
+                onClick={handleSyncToTeacherNow}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer shrink-0 disabled:opacity-50"
+              >
+                {syncingCloud
+                  ? isEn
+                    ? 'Sending...'
+                    : 'Đang gửi...'
+                  : isEn
+                    ? 'Send via Google'
+                    : 'Gửi điểm bằng Google'}
+              </button>
+            </div>
+          )}
+        </div>
 
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-5">
           <button
             type="button"
             onClick={onRetry}
@@ -244,6 +313,26 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
           >
             <Home className="w-4 h-4" />
             <span>{isEn ? 'Back to Home' : 'Về trang chủ'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyResultSlip}
+            className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+              copiedSlip
+                ? 'bg-emerald-600 text-white border-emerald-600'
+                : 'bg-white hover:bg-teal-50 text-teal-800 border-teal-300'
+            }`}
+          >
+            {copiedSlip ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            <span>
+              {copiedSlip
+                ? isEn
+                  ? 'Backup Slip Copied!'
+                  : 'Đã sao chép phiếu!'
+                : isEn
+                  ? 'Copy Backup Slip (Zalo)'
+                  : 'Sao chép phiếu (Dự phòng Zalo)'}
+            </span>
           </button>
         </div>
 

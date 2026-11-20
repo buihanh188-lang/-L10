@@ -72,6 +72,26 @@ export const TeacherLoginModal: React.FC<TeacherLoginModalProps> = ({
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setIsSubmitting(true);
+    setError('');
+    try {
+      const result = await apiService.teacherLoginWithGoogle();
+      StorageService.setCurrentUser(result.user);
+      onSuccess(result.user);
+      onClose();
+    } catch (err: any) {
+      setError(
+        err?.message ||
+          (isEn
+            ? 'Google sign-in failed. Please select buihanh188@gmail.com.'
+            : 'Đăng nhập Google không thành công. Cô vui lòng chọn đúng Gmail buihanh188@gmail.com.')
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden">
@@ -118,6 +138,28 @@ export const TeacherLoginModal: React.FC<TeacherLoginModalProps> = ({
               <span>{error}</span>
             </div>
           )}
+
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={handleGoogleLogin}
+            className="w-full py-2.5 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-extrabold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              {isEn
+                ? 'Sign in with Google (buihanh188@gmail.com)'
+                : 'Đăng nhập bằng Google (Tự động nhận điểm Firebase)'}
+            </span>
+          </button>
+
+          <div className="relative flex items-center justify-center">
+            <div className="border-t border-slate-200 w-full" />
+            <span className="bg-white px-2.5 text-[10px] font-bold text-slate-400 uppercase shrink-0">
+              {isEn ? 'or password' : 'hoặc mật khẩu'}
+            </span>
+            <div className="border-t border-slate-200 w-full" />
+          </div>
 
           {/* Account/Username */}
           <div className="space-y-1.5">

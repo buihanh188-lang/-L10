@@ -1,0 +1,312 @@
+{
+  "entities": {
+    "AdminGrant": {
+      "title": "Admin Grant",
+      "description": "Explicit RBAC document granting teacher administrator privileges.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "grantedAt"]
+    },
+    "StudentProfile": {
+      "title": "Student Profile",
+      "description": "Authenticated student profile keyed by Firebase Auth UID. Isolated to owner and teacher admin.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["student"]
+        },
+        "studentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "studentType": {
+          "type": "string",
+          "enum": ["official", "extended"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "studentCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "className": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "school": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "province": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "joinedDate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerUid",
+        "role",
+        "studentId",
+        "studentType",
+        "name",
+        "studentCode",
+        "className",
+        "school",
+        "province",
+        "joinedDate",
+        "lastLoginAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ExamAttempt": {
+      "title": "Exam Attempt",
+      "description": "Immutable student quiz or exam submission record synced automatically to teacher admin dashboard.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["submitted"]
+        },
+        "studentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "studentName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "studentCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "schoolName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "className": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "lessonId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "chapterId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "lessonTitle": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "questionType": {
+          "type": "string",
+          "enum": ["multiple_choice", "true_false_context", "short_answer", "matching", "all"]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["practice_topic", "practice_type", "practice_comprehensive", "official_test"]
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32
+        },
+        "durationSeconds": {
+          "type": "number"
+        },
+        "timeLimitMinutes": {
+          "type": "number"
+        },
+        "totalQuestions": {
+          "type": "number"
+        },
+        "answeredCount": {
+          "type": "number"
+        },
+        "unansweredCount": {
+          "type": "number"
+        },
+        "score": {
+          "type": "number"
+        },
+        "correctCount": {
+          "type": "number"
+        },
+        "wrongCount": {
+          "type": "number"
+        },
+        "accuracyRate": {
+          "type": "number"
+        },
+        "language": {
+          "type": "string",
+          "enum": ["vi", "en"]
+        },
+        "details": {
+          "type": "array"
+        },
+        "typeBreakdown": {
+          "type": "object"
+        },
+        "topicBreakdown": {
+          "type": "object"
+        },
+        "weakTopics": {
+          "type": "array"
+        },
+        "strongTopics": {
+          "type": "array"
+        },
+        "recommendation": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "ownerUid",
+        "status",
+        "studentId",
+        "studentName",
+        "studentCode",
+        "schoolName",
+        "className",
+        "lessonId",
+        "chapterId",
+        "lessonTitle",
+        "questionType",
+        "title",
+        "mode",
+        "timestamp",
+        "date",
+        "durationSeconds",
+        "timeLimitMinutes",
+        "totalQuestions",
+        "answeredCount",
+        "unansweredCount",
+        "score",
+        "correctCount",
+        "wrongCount",
+        "accuracyRate",
+        "language",
+        "details",
+        "typeBreakdown",
+        "topicBreakdown",
+        "weakTopics",
+        "strongTopics",
+        "recommendation",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": {
+        "$ref": "#/entities/AdminGrant"
+      },
+      "description": "Explicit RBAC admin allowlist; read-only for self or bootstrap teacher admin."
+    },
+    "/students/{userId}": {
+      "schema": {
+        "$ref": "#/entities/StudentProfile"
+      },
+      "description": "Student profile documents keyed by verified Firebase Auth UID; isolated from other students."
+    },
+    "/attempts/{attemptId}": {
+      "schema": {
+        "$ref": "#/entities/ExamAttempt"
+      },
+      "description": "Submitted student quiz and exam attempts; student-owned create/read and teacher-admin full analytics read/delete."
+    }
+  }
+}

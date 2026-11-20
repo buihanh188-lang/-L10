@@ -1,0 +1,526 @@
+WEBVTT
+
+1
+00:00:00.120 --> 00:00:03.028
+Chào mừng các em học sinh lớp 10 đến với bài giảng môn
+Địa lí,
+
+2
+00:00:03.068 --> 00:00:05.326
+bộ sách Kết nối tri thức với cuộc sống.
+
+3
+00:00:05.366 --> 00:00:08.578
+Trong bài học hôm nay, thầy cô cùng các em sẽ tìm hiểu
+Bài 6.
+
+4
+00:00:08.618 --> 00:00:11.353
+Thạch quyển, thuyết kiến tạo mảng, thuộc CHƯƠNG 3.
+
+5
+00:00:11.393 --> 00:00:12.481
+THẠCH QUYỂN.
+
+6
+00:00:12.521 --> 00:00:15.733
+Đây là một chủ đề trọng tâm giúp các em hiểu rõ giới
+hạn thạch quyển,
+
+7
+00:00:15.773 --> 00:00:18.464
+các mảng kiến tạo lớn và cơ chế dịch chuyển của các
+mảng,
+
+8
+00:00:18.504 --> 00:00:21.196
+từ đó biết cách giải thích các hiện tượng tự nhiên
+hoặc kinh tế
+
+9
+00:00:21.236 --> 00:00:23.147
+xã hội diễn ra xung quanh mình.
+
+10
+00:00:23.187 --> 00:00:24.274
+Hãy chuẩn bị vở ghi,
+
+11
+00:00:24.314 --> 00:00:28.170
+theo dõi sát các sơ đồ trên màn hình và cùng bắt đầu
+bài học ngay bây giờ.
+
+12
+00:00:28.370 --> 00:00:29.024
+Trước hết,
+
+13
+00:00:29.064 --> 00:00:33.056
+chúng ta hãy xác định rõ những mục tiêu cần đạt sau
+khi hoàn thành bài học này.
+
+14
+00:00:33.096 --> 00:00:35.701
+Mục tiêu thứ 1: Xác định được giới hạn của thạch
+quyển,
+
+15
+00:00:35.741 --> 00:00:38.173
+phân biệt được thạch quyển với vỏ Trái Đất.
+
+16
+00:00:38.213 --> 00:00:41.555
+Mục tiêu thứ 2: Trình bày được nội dung cơ bản của
+thuyết kiến tạo mảng:
+
+17
+00:00:41.595 --> 00:00:44.503
+7 mảng kiến tạo lớn trôi dạt trên lớp manti quánh dẻo.
+
+18
+00:00:44.543 --> 00:00:47.842
+Mục tiêu thứ 3: Giải thích được nguyên nhân hình thành
+các dãy núi trẻ,
+
+19
+00:00:47.882 --> 00:00:51.527
+vực sâu đại dương, động đất và núi lửa tại các ranh
+giới tiếp xúc mảng.
+
+20
+00:00:51.567 --> 00:00:52.438
+Mục tiêu thứ 4:
+
+21
+00:00:52.478 --> 00:00:55.039
+Tính toán được tốc độ trôi dạt của các mảng kiến tạo
+và liên
+
+22
+00:00:55.079 --> 00:00:57.814
+hệ với các đới đứt gãy địa chất tại tỉnh Lạng Sơn.
+
+23
+00:00:57.854 --> 00:01:00.503
+Việc nắm vững các mục tiêu trên không chỉ giúp các em
+hệ thống
+
+24
+00:01:00.543 --> 00:01:02.801
+hóa kiến thức sách giáo khoa một cách khoa học,
+
+25
+00:01:02.841 --> 00:01:06.573
+mà còn là nền tảng vững chắc để vận dụng giải quyết
+các dạng câu hỏi trắc nghiệm,
+
+26
+00:01:06.613 --> 00:01:09.688
+đúng sai, trả lời ngắn và ghép cột trong phần luyện
+tập.
+
+27
+00:01:09.888 --> 00:01:12.758
+Chúng ta chuyển sang nội dung trọng tâm thứ 1: 1.
+
+28
+00:01:12.798 --> 00:01:14.420
+Khái niệm Thạch quyển.
+
+29
+00:01:14.460 --> 00:01:15.667
+Ở phần kiến thức này,
+
+30
+00:01:15.707 --> 00:01:18.207
+các em hãy quan sát sơ đồ hệ thống trên màn hình và
+chú
+
+31
+00:01:18.247 --> 00:01:20.239
+ý các luận điểm chính sau đây.
+
+32
+00:01:20.279 --> 00:01:22.779
+Thạch quyển là phần cứng ngoài cùng của Trái Đất,
+
+33
+00:01:22.819 --> 00:01:26.659
+bao gồm vỏ Trái Đất và phần trên cùng của lớp manti
+(lớp manti trên rắn chắc),
+
+34
+00:01:26.699 --> 00:01:28.414
+có độ dày khoảng 100 km.
+
+35
+00:01:28.454 --> 00:01:32.663
+Phía dưới thạch quyển là tầng asthenosphere (quyển mềm
+hay quyển quánh dẻo) của manti,
+
+36
+00:01:32.703 --> 00:01:35.341
+nơi vật chất ở trạng thái quánh dẻo và có các dòng đối
+lưu
+
+37
+00:01:35.381 --> 00:01:37.281
+nhiệt dịch chuyển chậm chạp.
+
+38
+00:01:37.321 --> 00:01:38.805
+Điểm mấu chốt cần khắc sâu:
+
+39
+00:01:38.845 --> 00:01:42.453
+Thạch quyển = Vỏ Trái Đất + Phần trên cùng của manti
+(dày khoảng 100 km),
+
+40
+00:01:42.493 --> 00:01:44.704
+nằm nổi trên quyển mềm quánh dẻo.
+
+41
+00:01:44.904 --> 00:01:47.721
+Chúng ta chuyển sang nội dung trọng tâm thứ 2: 2.
+
+42
+00:01:47.761 --> 00:01:50.442
+Thuyết kiến tạo mảng và các mảng kiến tạo lớn.
+
+43
+00:01:50.482 --> 00:01:51.666
+Ở phần kiến thức này,
+
+44
+00:01:51.706 --> 00:01:54.161
+các em hãy quan sát sơ đồ hệ thống trên màn hình và
+chú
+
+45
+00:01:54.201 --> 00:01:56.156
+ý các luận điểm chính sau đây.
+
+46
+00:01:56.196 --> 00:01:59.285
+Thuyết kiến tạo mảng cho rằng thạch quyển không phải
+là một khối liền
+
+47
+00:01:59.325 --> 00:02:02.414
+mà bị chia cắt thành 7 mảng kiến tạo lớn (mảng Thái
+Bình Dương,
+
+48
+00:02:02.454 --> 00:02:05.045
+Âu - Á, Ấn Độ - Ôxtrâylia, Bắc Mỹ, Nam Mỹ, châu Phi,
+
+49
+00:02:05.085 --> 00:02:06.904
+Nam Cực) và nhiều mảng nhỏ.
+
+50
+00:02:06.944 --> 00:02:09.897
+Các mảng kiến tạo không đứng yên mà liên tục dịch
+chuyển chậm chạp
+
+51
+00:02:09.937 --> 00:02:12.754
+với tốc độ khoảng vài xentimet mỗi năm nhờ các dòng
+đối lưu vật
+
+52
+00:02:12.794 --> 00:02:14.240
+chất trong manti.
+
+53
+00:02:14.440 --> 00:02:17.320
+Chúng ta chuyển sang nội dung trọng tâm thứ 3: 3.
+
+54
+00:02:17.360 --> 00:02:19.869
+Các kiểu tiếp xúc giữa các mảng kiến tạo.
+
+55
+00:02:19.909 --> 00:02:21.120
+Ở phần kiến thức này,
+
+56
+00:02:21.160 --> 00:02:23.669
+các em hãy quan sát sơ đồ hệ thống trên màn hình và
+chú
+
+57
+00:02:23.709 --> 00:02:25.708
+ý các luận điểm chính sau đây.
+
+58
+00:02:25.748 --> 00:02:29.276
+a) Tiếp xúc tách dãn (ranh giới phân kì): Hai mảng
+dịch chuyển xa nhau,
+
+59
+00:02:29.316 --> 00:02:33.262
+mácma từ dưới trào lên tạo thành sống núi ngầm đại
+dương và đáy biển mới (ví dụ:
+
+60
+00:02:33.302 --> 00:02:35.486
+sống núi ngầm giữa Đại Tây Dương).
+
+61
+00:02:35.526 --> 00:02:39.333
+b) Tiếp xúc dồn ép / xô húc (ranh giới hội tụ): Hai
+mảng xô vào nhau.
+
+62
+00:02:39.373 --> 00:02:42.670
+Nếu mảng đại dương va chạm mảng lục địa sẽ bị hút chìm
+xuống dưới,
+
+63
+00:02:42.710 --> 00:02:45.265
+hình thành vực biển sâu và chuỗi cung đảo núi lửa;
+
+64
+00:02:45.305 --> 00:02:47.860
+nếu hai mảng lục địa xô vào nhau sẽ uốn nếp nâng cao
+tạo
+
+65
+00:02:47.900 --> 00:02:50.687
+các dãy núi trẻ hùng vĩ (như dãy Hi-ma-lay-a do mảng
+Ấn Độ xô
+
+66
+00:02:50.727 --> 00:02:52.124
+húc mảng Âu - Á).
+
+67
+00:02:52.164 --> 00:02:55.460
+c) Tiếp xúc trượt bằng (biến dạng): Hai mảng trượt
+ngang qua nhau,
+
+68
+00:02:55.500 --> 00:02:58.195
+sinh ra các đứt gãy lớn kèm theo động đất nông nhưng
+dữ dội
+
+69
+00:02:58.235 --> 00:03:00.466
+(như đứt gãy San Andreas ở Bắc Mỹ).
+
+70
+00:03:00.506 --> 00:03:03.478
+Bên cạnh đó, các em cần nắm chắc các thuật ngữ cốt lõi
+gồm:
+
+71
+00:03:03.518 --> 00:03:06.768
+Thạch quyển (Lithosphere) là Lớp vỏ cứng ngoài cùng
+của Trái Đất,
+
+72
+00:03:06.808 --> 00:03:10.151
+gồm vỏ Trái Đất và phần trên cùng của lớp manti, dày
+khoảng 100 km;
+
+73
+00:03:10.191 --> 00:03:13.627
+Kiến tạo mảng (Plate Tectonics) là Học thuyết địa chất
+giải thích sự chuyển
+
+74
+00:03:13.667 --> 00:03:16.269
+động của các mảng vỏ cứng trên lớp manti quánh dẻo,
+
+75
+00:03:16.309 --> 00:03:18.262
+sinh ra động đất, núi lửa và tạo núi;
+
+76
+00:03:18.302 --> 00:03:21.598
+Hút chìm (Subduction) là Hiện tượng một mảng kiến tạo
+đại dương nặng hơn
+
+77
+00:03:21.638 --> 00:03:25.015
+chìm xuống phía dưới một mảng kiến tạo khác vào lớp
+manti.
+
+78
+00:03:25.215 --> 00:03:27.401
+Để kiến thức không chỉ nằm trên trang giấy,
+
+79
+00:03:27.441 --> 00:03:31.171
+chúng ta hãy cùng liên hệ thực tiễn cuộc sống và địa
+phương Lạng Sơn.
+
+80
+00:03:31.211 --> 00:03:33.805
+Lãnh thổ tỉnh Lạng Sơn (trong đó có khu vực Chi Lăng
+và xã
+
+81
+00:03:33.845 --> 00:03:36.122
+Vạn Linh) nằm trọn trên mảng kiến tạo Âu - Á,
+
+82
+00:03:36.162 --> 00:03:38.893
+chịu ảnh hưởng của các đới đứt gãy kiến tạo cổ phương
+tây bắc
+
+83
+00:03:38.933 --> 00:03:41.573
+- đông nam (đới đứt gãy Cao Bằng - Lạng Sơn).
+
+84
+00:03:41.613 --> 00:03:45.161
+Vận động kiến tạo Tân kiến tạo đã nâng cao các khối đá
+vôi cổ ở Chi Lăng,
+
+85
+00:03:45.201 --> 00:03:47.841
+tạo nên địa hình núi đá dốc đứng và các bồn trũng
+karst kín
+
+86
+00:03:47.881 --> 00:03:49.431
+màu mỡ ở xã Vạn Linh.
+
+87
+00:03:49.471 --> 00:03:50.930
+Qua những ví dụ cụ thể này,
+
+88
+00:03:50.970 --> 00:03:53.519
+các em thấy rõ mối liên hệ mật thiết giữa quy luật địa
+lí
+
+89
+00:03:53.559 --> 00:03:54.836
+với hoạt động sản xuất,
+
+90
+00:03:54.876 --> 00:03:58.777
+bảo vệ môi trường và định hướng phát triển kinh tế tại
+địa phương mình.
+
+91
+00:03:58.977 --> 00:04:00.400
+Sau khi nắm vững bài giảng,
+
+92
+00:04:00.440 --> 00:04:03.104
+các em hãy chuyển sang mục Luyện tập ngay trên Web App
+Địa lí
+
+93
+00:04:03.144 --> 00:04:04.833
+10 – Chinh phục tri thức.
+
+94
+00:04:04.873 --> 00:04:07.359
+Hệ thống đã thiết kế đầy đủ bốn dạng câu hỏi bám sát
+định
+
+95
+00:04:07.399 --> 00:04:09.974
+hướng thi tốt nghiệp trung học phổ thông mới.
+
+96
+00:04:10.014 --> 00:04:11.792
+Với dạng Trắc nghiệm bốn phương án,
+
+97
+00:04:11.832 --> 00:04:14.983
+hãy chú ý các từ khóa chỉ đặc điểm hoặc vai trò chính
+xác.
+
+98
+00:04:15.023 --> 00:04:16.668
+Với dạng Đúng Sai theo ngữ liệu,
+
+99
+00:04:16.708 --> 00:04:20.037
+các em cần đọc kĩ đoạn thông tin thực tế và đánh giá
+độc lập từng ý A,
+
+100
+00:04:20.077 --> 00:04:21.012
+B, C, D.
+
+101
+00:04:21.052 --> 00:04:24.868
+Với dạng Trả lời ngắn, hãy điền chính xác con số hoặc
+thuật ngữ ngắn gọn.
+
+102
+00:04:24.908 --> 00:04:26.065
+Và với dạng Ghép cột,
+
+103
+00:04:26.105 --> 00:04:29.780
+hãy đối chiếu thật kĩ giữa nhóm kiến thức hoặc ngành
+nghề tương ứng.
+
+104
+00:04:29.980 --> 00:04:31.460
+Trước khi khép lại bài giảng,
+
+105
+00:04:31.500 --> 00:04:34.935
+chúng ta cùng hệ thống hóa lại những thông điệp cốt
+lõi của Bài 6.
+
+106
+00:04:34.975 --> 00:04:37.020
+Thạch quyển, thuyết kiến tạo mảng.
+
+107
+00:04:37.060 --> 00:04:40.451
+Thạch quyển gồm vỏ Trái Đất và phần trên manti dày
+khoảng 100 km.
+
+108
+00:04:40.491 --> 00:04:43.839
+Bề mặt Trái Đất gồm 7 mảng lớn liên tục trôi dạt trên
+quyển mềm.
+
+109
+00:04:43.879 --> 00:04:47.097
+Vùng tiếp xúc giữa các mảng kiến tạo là nơi tập trung
+nhiều động đất,
+
+110
+00:04:47.137 --> 00:04:50.050
+núi lửa và các đai uốn nếp tạo núi lớn nhất hành tinh.
+
+111
+00:04:50.090 --> 00:04:52.613
+Hi vọng bài giảng hôm nay đã giúp các em không chỉ
+hiểu sâu
+
+112
+00:04:52.653 --> 00:04:55.132
+kiến thức sách giáo khoa Địa lí 10 Kết nối tri thức mà
+còn
+
+113
+00:04:55.172 --> 00:04:57.912
+thêm yêu thích môn học và sớm định hình hướng đi nghề
+nghiệp phù
+
+114
+00:04:57.952 --> 00:04:59.649
+hợp với năng lực bản thân.
+
+115
+00:04:59.689 --> 00:05:02.907
+Chúc các em hoàn thành xuất sắc phần luyện tập ngay
+bên dưới.
+
+116
+00:05:02.947 --> 00:05:05.289
+Hẹn gặp lại các em ở bài học tiếp theo.

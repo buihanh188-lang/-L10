@@ -2530,9 +2530,10 @@ async function startServer() {
       return res.sendFile(fullPath);
     });
 
+    app.use('/videos', express.static(path.resolve(process.cwd(), 'public', 'videos'), { maxAge: '7d' }));
     app.use(express.static(distDir, { index: false }));
     app.get('*', (req: Request, res: Response) => {
-      if (req.path.startsWith('/assets/') || req.path.startsWith('/api/')) {
+      if (req.path.startsWith('/assets/') || req.path.startsWith('/api/') || req.path.startsWith('/videos/')) {
         return res.status(404).type('text/plain').send('Not found');
       }
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
