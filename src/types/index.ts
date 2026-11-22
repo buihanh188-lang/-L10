@@ -587,4 +587,18 @@ export interface VideoCapabilities {
   storageDir: string;
 }
 
+export type LearningActivityType = 'visit' | 'video_view' | 'lesson_view';
 
+export interface LearningActivity {
+  id: string;
+  type: LearningActivityType;
+  studentId: string;
+  studentName: string;
+  studentCode: string;
+  schoolName: string;
+  className: string;
+  lessonId?: string;
+  lessonTitle?: string;
+  timestamp: number;
+  date: string;
+}

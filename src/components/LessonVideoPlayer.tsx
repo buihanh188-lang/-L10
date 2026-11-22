@@ -14,11 +14,14 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { apiService } from '../services/api';
+import { StorageService } from '../services/storage';
+import type { UserProfile } from '../types';
 
 interface LessonVideoPlayerProps {
   lessonId: string;
   lessonNumber: number;
   lessonTitle: string;
+  currentUser?: UserProfile | null;
   isEn?: boolean;
   onJumpToKnowledge: () => void;
   onJumpToPractice: () => void;
@@ -37,6 +40,7 @@ export const LessonVideoPlayer: React.FC<LessonVideoPlayerProps> = ({
   lessonId,
   lessonNumber,
   lessonTitle,
+  currentUser,
   isEn = false,
   onJumpToKnowledge,
   onJumpToPractice,
@@ -115,7 +119,32 @@ export const LessonVideoPlayer: React.FC<LessonVideoPlayerProps> = ({
     el.textTracks[0].mode = subtitlesEnabled ? 'showing' : 'hidden';
   }, [subtitlesEnabled, videoMeta]);
 
+  const recordCloudVideoView = () => {
+    const activeUser = currentUser || StorageService.getCurrentUser();
+    if (!activeUser || activeUser.role !== 'student') return;
+    apiService
+      .recordLearningActivity(
+        {
+          type: 'video_view',
+          lessonId,
+          lessonTitle: `Bài ${lessonNumber}: ${lessonTitle}`,
+        },
+        activeUser
+      )
+      .catch(() => {});
+  };
+
+  // For embedded iframe videos (YouTube / Google Drive), record a view when student stays on the video player
+  useEffect(() => {
+    if (!available || !videoMeta || videoMeta.playbackType !== 'iframe') return;
+    const timer = window.setTimeout(() => {
+      recordCloudVideoView();
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [available, videoMeta?.playbackType, videoMeta?.videoUrl, lessonId]);
+
   const recordWatchStart = () => {
+    recordCloudVideoView();
     try {
       const raw = localStorage.getItem(WATCH_HISTORY_KEY);
       const parsed = raw ? JSON.parse(raw) : {};
@@ -252,6 +281,7 @@ export const LessonVideoPlayer: React.FC<LessonVideoPlayerProps> = ({
                 }}
                 onPlay={() => {
                   setIsPlaying(true);
+                  recordCloudVideoView();
                   if (watchCount === 0) recordWatchStart();
                 }}
                 onPause={() => setIsPlaying(false)}

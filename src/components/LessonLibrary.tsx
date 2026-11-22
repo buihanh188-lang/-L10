@@ -94,6 +94,22 @@ export const LessonLibrary: React.FC<LessonLibraryProps> = ({
     });
   }, [activeLesson]);
 
+  // Silently record student lesson view (once per lesson per browser session)
+  React.useEffect(() => {
+    if (activeLesson && currentUser?.role === 'student') {
+      apiService
+        .recordLearningActivity(
+          {
+            type: 'lesson_view',
+            lessonId: activeLesson.id,
+            lessonTitle: `Bài ${activeLesson.number}: ${activeLesson.title}`,
+          },
+          currentUser
+        )
+        .catch(() => {});
+    }
+  }, [activeLesson?.id, currentUser?.id, currentUser?.role]);
+
   // Available chapters based on selected part
   const availableChapters =
     selectedPartId === 'all'
@@ -364,6 +380,7 @@ export const LessonLibrary: React.FC<LessonLibraryProps> = ({
           lessonId={activeLesson.id}
           lessonNumber={locLesson.number}
           lessonTitle={locLesson.title}
+          currentUser={currentUser}
           isEn={isEn}
           onJumpToKnowledge={() => {
             document.getElementById('lesson-core-knowledge')?.scrollIntoView({ behavior: 'smooth' });

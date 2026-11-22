@@ -287,6 +287,91 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "LearningActivity": {
+      "title": "Learning Activity",
+      "description": "Immutable student learning visit, video lecture view, or lesson view event synced automatically for private teacher analytics.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["visit", "video_view", "lesson_view"]
+        },
+        "studentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "studentName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "studentCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "schoolName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "className": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "lessonId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "lessonTitle": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "ownerUid",
+        "type",
+        "studentId",
+        "studentName",
+        "studentCode",
+        "schoolName",
+        "className",
+        "lessonId",
+        "lessonTitle",
+        "timestamp",
+        "date",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -307,6 +392,12 @@
         "$ref": "#/entities/ExamAttempt"
       },
       "description": "Submitted student quiz and exam attempts; student-owned create/read and teacher-admin full analytics read/delete."
+    },
+    "/activities/{activityId}": {
+      "schema": {
+        "$ref": "#/entities/LearningActivity"
+      },
+      "description": "Immutable student learning visits, video lecture views, and lesson views; student-owned create/read and teacher-admin full analytics read/delete."
     }
   }
 }

@@ -2,6 +2,8 @@ import {
   ClassStats,
   Classroom,
   ExamRecord,
+  LearningActivity,
+  LearningActivityType,
   LessonVideoRecord,
   MultiSchoolFilterOptions,
   Question,
@@ -50,6 +52,7 @@ import {
   sanitizeFirestoreId,
   signInWithGooglePopup,
   signOutFirebase,
+  syncActivityToCloud,
   syncAttemptToCloud,
   syncStudentProfileToCloud,
   TEACHER_ADMIN_EMAIL,
@@ -57,6 +60,8 @@ import {
 
 const TEACHER_TOKEN_KEY = 'dia_li_10_teacher_token';
 const PENDING_ATTEMPTS_KEY = 'dia_li_10_pending_attempts';
+const ACTIVITIES_KEY = 'dia_li_10_learning_activities';
+const PENDING_ACTIVITIES_KEY = 'dia_li_10_pending_activities';
 const EXAM_RECORDS_KEY = 'dia_li_10_exam_records';
 const STUDENTS_KEY = 'dia_li_10_students';
 const DELETED_STUDENTS_KEY = 'dia_li_10_deleted_students';
@@ -197,6 +202,8 @@ function makeBaseVideoRecord(lesson: (typeof LESSONS)[number]): LessonVideoRecor
 class ApiService {
   private cloudAttempts: ExamRecord[] = [];
   private cloudStudents: UserProfile[] = [];
+  private cloudActivities: LearningActivity[] = [];
+  private recordedSessionActivityKeys = new Set<string>();
   private cloudConnected = false;
   private cloudUserEmail: string | null = null;
   private cloudIsTeacher = false;
@@ -286,11 +293,16 @@ class ApiService {
       this.cloudIsTeacher = false;
       this.cloudAttempts = [];
       this.cloudStudents = [];
+      this.cloudActivities = [];
     }
     this.emitDataChanged();
   }
 
-  setCloudSyncData(payload: { attempts?: ExamRecord[]; students?: UserProfile[] }): void {
+  setCloudSyncData(payload: {
+    attempts?: ExamRecord[];
+    students?: UserProfile[];
+    activities?: LearningActivity[];
+  }): void {
     if (payload.attempts) {
       this.cloudAttempts = payload.attempts;
       // Merge cloud attempts into localStorage cache so offline views remain warm
@@ -324,6 +336,18 @@ class ApiService {
       });
     }
 
+    if (payload.activities) {
+      this.cloudActivities = payload.activities;
+      const actMap = new Map<string, LearningActivity>();
+      this.getLocalActivitiesList().forEach((a) => {
+        if (a && a.id) actMap.set(a.id, a);
+      });
+      payload.activities.forEach((a) => {
+        if (a && a.id) actMap.set(a.id, a);
+      });
+      this.saveLocalActivitiesList(Array.from(actMap.values()));
+    }
+
     this.emitDataChanged();
   }
 
@@ -334,6 +358,7 @@ class ApiService {
     isAnonymous: boolean;
     cloudAttemptCount: number;
     cloudStudentCount: number;
+    cloudActivityCount: number;
     pendingCount: number;
   } {
     const current = auth.currentUser;
@@ -345,6 +370,7 @@ class ApiService {
       isAnonymous: Boolean(current?.isAnonymous),
       cloudAttemptCount: this.cloudAttempts.length,
       cloudStudentCount: this.cloudStudents.length,
+      cloudActivityCount: this.cloudActivities.length,
       pendingCount: this.getPendingAttempts().length,
     };
   }
@@ -369,6 +395,7 @@ class ApiService {
       }
     }
     const flushed = await this.flushPendingAttempts(profile || undefined);
+    await this.flushPendingActivities().catch(() => {});
     await this.refreshCloudData();
     return { synced: flushed.failed === 0, syncedPending: flushed.synced };
   }
@@ -519,6 +546,10 @@ class ApiService {
     });
 
     return Array.from(map.values());
+  }
+
+  getAllStudents(): UserProfile[] {
+    return this.getAllStudentsLocal();
   }
 
   private saveStudentsLocal(students: UserProfile[]): void {
@@ -1564,6 +1595,226 @@ class ApiService {
     safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(stillPending));
     if (synced > 0) this.emitDataChanged();
     return { synced, failed };
+  }
+
+  // =========================================================================
+  // 6B. LEARNING VISITS, VIDEO VIEWS & LESSON VIEWS ANALYTICS (PRIVATE ADMIN)
+  // =========================================================================
+  private getLocalActivitiesList(): LearningActivity[] {
+    try {
+      const raw = safeGetItem(ACTIVITIES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  }
+
+  private saveLocalActivitiesList(list: LearningActivity[]): void {
+    try {
+      const sorted = [...list]
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 5000);
+      safeSetItem(ACTIVITIES_KEY, JSON.stringify(sorted));
+    } catch {
+      // ignore
+    }
+  }
+
+  getPendingActivities(): LearningActivity[] {
+    try {
+      const raw = safeGetItem(PENDING_ACTIVITIES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  }
+
+  private savePendingActivities(list: LearningActivity[]): void {
+    try {
+      safeSetItem(PENDING_ACTIVITIES_KEY, JSON.stringify(list.slice(0, 500)));
+    } catch {
+      // ignore
+    }
+  }
+
+  async recordLearningActivity(
+    params: {
+      type: LearningActivityType;
+      lessonId?: string;
+      lessonTitle?: string;
+    },
+    user?: UserProfile | null
+  ): Promise<boolean> {
+    // Strictly track students only — never inflate metrics from teacher/admin previews
+    if (!user || user.role !== 'student') return false;
+
+    const now = Date.now();
+    const todayIso = new Date(now).toISOString().slice(0, 10);
+    const lessonKey = params.lessonId ? sanitizeFirestoreId(params.lessonId, 'bai') : 'app';
+    const sessionKey = `dl10_act_${params.type}_${user.id}_${lessonKey}_${todayIso}`;
+
+    // Deduplicate within the current browser tab session (prevents F5/pause-play inflation)
+    if (this.recordedSessionActivityKeys.has(sessionKey)) {
+      return false;
+    }
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage.getItem(sessionKey)) {
+        this.recordedSessionActivityKeys.add(sessionKey);
+        return false;
+      }
+    } catch {
+      // ignore sessionStorage restrictions
+    }
+
+    this.recordedSessionActivityKeys.add(sessionKey);
+    try {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(sessionKey, '1');
+      }
+    } catch {
+      // ignore
+    }
+
+    const activity: LearningActivity = {
+      id: `act-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      type: params.type,
+      studentId: user.id || `hs-${now}`,
+      studentName: normalizeStudentName(user.name || 'Học sinh'),
+      studentCode: user.code || 'HS',
+      schoolName: normalizeSchoolName(user.school || 'TRƯỜNG THPT HÒA BÌNH'),
+      className: normalizeClassName(user.className || '10A1'),
+      lessonId: params.lessonId || '',
+      lessonTitle: params.lessonTitle || '',
+      timestamp: now,
+      date: new Date(now).toLocaleDateString('vi-VN'),
+    };
+
+    // Persist locally immediately
+    const localList = this.getLocalActivitiesList();
+    localList.unshift(activity);
+    this.saveLocalActivitiesList(localList);
+
+    // Enqueue pending sync in case network/auth is warming up
+    const pending = this.getPendingActivities();
+    pending.push(activity);
+    this.savePendingActivities(pending);
+    this.emitDataChanged();
+
+    // Silent automatic cloud sync (no Gmail popup needed)
+    try {
+      if (!isCloudSyncEligibleUser(auth.currentUser)) {
+        const session = await ensureAnonymousStudentSession();
+        if (session.user) {
+          this.setCloudAuthContext(session.user);
+        }
+      }
+      if (isCloudSyncEligibleUser(auth.currentUser)) {
+        const res = await syncActivityToCloud(activity);
+        if (res.synced) {
+          const remaining = this.getPendingActivities().filter((a) => a.id !== activity.id);
+          this.savePendingActivities(remaining);
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('Learning activity queued for retry:', e);
+    }
+    return false;
+  }
+
+  async flushPendingActivities(): Promise<{ synced: number; failed: number }> {
+    const pending = this.getPendingActivities();
+    if (pending.length === 0) return { synced: 0, failed: 0 };
+
+    if (!isCloudSyncEligibleUser(auth.currentUser)) {
+      const session = await ensureAnonymousStudentSession();
+      if (session.user) {
+        this.setCloudAuthContext(session.user);
+      }
+    }
+    if (!isCloudSyncEligibleUser(auth.currentUser)) {
+      return { synced: 0, failed: pending.length };
+    }
+
+    let synced = 0;
+    let failed = 0;
+    const stillPending: LearningActivity[] = [];
+    for (const item of pending) {
+      try {
+        const res = await syncActivityToCloud(item);
+        if (res.synced) {
+          synced++;
+        } else {
+          failed++;
+          stillPending.push(item);
+        }
+      } catch {
+        failed++;
+        stillPending.push(item);
+      }
+    }
+    this.savePendingActivities(stillPending);
+    if (synced > 0) this.emitDataChanged();
+    return { synced, failed };
+  }
+
+  getLearningActivities(filters?: {
+    schoolName?: string;
+    className?: string;
+    timeRange?: 'all' | 'today' | '7days' | '30days';
+    type?: 'all' | LearningActivityType;
+  }): LearningActivity[] {
+    const map = new Map<string, LearningActivity>();
+    this.getLocalActivitiesList().forEach((a) => {
+      if (a && a.id) map.set(a.id, a);
+    });
+    this.getPendingActivities().forEach((a) => {
+      if (a && a.id) map.set(a.id, a);
+    });
+    this.cloudActivities.forEach((a) => {
+      if (a && a.id) map.set(a.id, a);
+    });
+
+    let list = Array.from(map.values());
+
+    if (filters?.schoolName && filters.schoolName !== 'all') {
+      const targetSchoolKey = normalizeSchoolKey(filters.schoolName);
+      list = list.filter((a) => normalizeSchoolKey(a.schoolName) === targetSchoolKey);
+    }
+
+    if (filters?.className && filters.className !== 'all') {
+      const targetClass = normalizeClassName(filters.className);
+      list = list.filter((a) => normalizeClassName(a.className) === targetClass);
+    }
+
+    if (filters?.type && filters.type !== 'all') {
+      list = list.filter((a) => a.type === filters.type);
+    }
+
+    if (filters?.timeRange && filters.timeRange !== 'all') {
+      const now = Date.now();
+      let cutoff = 0;
+      if (filters.timeRange === 'today') {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        cutoff = d.getTime();
+      } else if (filters.timeRange === '7days') {
+        cutoff = now - 7 * 24 * 60 * 60 * 1000;
+      } else if (filters.timeRange === '30days') {
+        cutoff = now - 30 * 24 * 60 * 60 * 1000;
+      }
+      list = list.filter((a) => (a.timestamp || 0) >= cutoff);
+    }
+
+    return list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }
 
   // =========================================================================

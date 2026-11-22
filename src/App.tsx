@@ -125,8 +125,9 @@ function AppContent() {
             console.warn('Firestore live listener notice:', err.message);
           }
         );
-        // Automatically flush any queued offline student attempts
+        // Automatically flush any queued offline student attempts & learning activities
         apiService.flushPendingAttempts(StorageService.getCurrentUser() || undefined).catch(() => {});
+        apiService.flushPendingActivities().catch(() => {});
       } else {
         apiService.setCloudAuthContext(null);
       }
@@ -139,18 +140,22 @@ function AppContent() {
   }, []);
 
   // Automatically initialize silent anonymous Firebase session for active students (no Gmail required)
+  // and silently record 1 learning visit per browser session for private teacher analytics
   React.useEffect(() => {
     if (currentUser?.role === 'student') {
+      apiService.recordLearningActivity({ type: 'visit' }, currentUser).catch(() => {});
       ensureAnonymousStudentSession()
         .then((res) => {
           if (res.user) {
             apiService.flushPendingAttempts(currentUser).catch(() => {});
+            apiService.flushPendingActivities().catch(() => {});
           }
         })
         .catch(() => {});
     }
     const handleOnline = () => {
       apiService.flushPendingAttempts(StorageService.getCurrentUser() || undefined).catch(() => {});
+      apiService.flushPendingActivities().catch(() => {});
     };
     window.addEventListener('online', handleOnline);
     return () => {

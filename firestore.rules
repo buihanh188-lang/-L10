@@ -218,6 +218,52 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidActivity(data) {
+      return data.keys().hasAll([
+          'id',
+          'ownerUid',
+          'type',
+          'studentId',
+          'studentName',
+          'studentCode',
+          'schoolName',
+          'className',
+          'lessonId',
+          'lessonTitle',
+          'timestamp',
+          'date',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id',
+          'ownerUid',
+          'type',
+          'studentId',
+          'studentName',
+          'studentCode',
+          'schoolName',
+          'className',
+          'lessonId',
+          'lessonTitle',
+          'timestamp',
+          'date',
+          'createdAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerUid) &&
+        data.type in ['visit', 'video_view', 'lesson_view'] &&
+        isValidString(data.studentId, 1, 128) &&
+        isValidString(data.studentName, 1, 120) &&
+        isValidString(data.studentCode, 1, 64) &&
+        isValidString(data.schoolName, 1, 160) &&
+        isValidString(data.className, 1, 32) &&
+        isValidString(data.lessonId, 0, 64) &&
+        isValidString(data.lessonTitle, 0, 200) &&
+        data.timestamp is number && data.timestamp >= 0 &&
+        isValidString(data.date, 0, 32) &&
+        data.createdAt is timestamp;
+    }
+
     // =========================================================================
     // 1. ADMINS COLLECTION (Strict verified Google Admin only; no client writes)
     // =========================================================================
@@ -291,6 +337,24 @@ service cloud.firestore {
         ]);
 
       allow delete: if isVerifiedUser() && isValidId(attemptId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 4. ACTIVITIES COLLECTION (Immutable Learning Visits, Video Views & Lesson Views)
+    // =========================================================================
+    match /activities/{activityId} {
+      allow get: if isSignedIn() && isValidId(activityId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.ownerUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+        isValidId(activityId) &&
+        isValidActivity(incoming()) &&
+        incoming().id == activityId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if false;
+      allow delete: if isVerifiedUser() && isValidId(activityId) && isAdmin();
     }
   }
 }

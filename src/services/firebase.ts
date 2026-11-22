@@ -28,7 +28,13 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import type { ExamRecord, QuestionGradingDetail, QuestionType, UserProfile } from '../types';
+import type {
+  ExamRecord,
+  LearningActivity,
+  QuestionGradingDetail,
+  QuestionType,
+  UserProfile,
+} from '../types';
 import {
   normalizeClassName,
   normalizeSchoolKey,
@@ -428,6 +434,36 @@ export function buildAttemptCreatePayload(uid: string, record: ExamRecord) {
   };
 }
 
+export function buildActivityCreatePayload(uid: string, activity: LearningActivity) {
+  const safeActivityId = sanitizeFirestoreId(activity.id, 'act');
+  const validTypes = ['visit', 'video_view', 'lesson_view'] as const;
+  const type = validTypes.includes(activity.type as any) ? activity.type : 'visit';
+  const ts = clampNumber(activity.timestamp || Date.now(), 0, 9999999999999, Date.now());
+
+  return {
+    safeActivityId,
+    payload: {
+      id: safeActivityId,
+      ownerUid: sanitizeFirestoreId(uid, 'uid'),
+      type,
+      studentId: clampString(activity.studentId || uid, 128, uid),
+      studentName: clampString(normalizeStudentName(activity.studentName || 'Học sinh'), 120, 'Học sinh'),
+      studentCode: clampString(activity.studentCode || 'HS', 64, 'HS'),
+      schoolName: clampString(
+        normalizeSchoolName(activity.schoolName || 'TRƯỜNG THPT HÒA BÌNH'),
+        160,
+        'TRƯỜNG THPT HÒA BÌNH'
+      ),
+      className: clampString(normalizeClassName(activity.className || '10A1'), 32, '10A1'),
+      lessonId: clampString(activity.lessonId || '', 64),
+      lessonTitle: clampString(activity.lessonTitle || '', 200),
+      timestamp: ts,
+      date: clampString(activity.date || new Date(ts).toLocaleDateString('vi-VN'), 32),
+      createdAt: serverTimestamp(),
+    },
+  };
+}
+
 // =========================================================================
 // FIRESTORE CRUD & REAL-TIME SYNC OPERATIONS
 // =========================================================================
@@ -529,6 +565,27 @@ export async function deleteAttemptFromCloud(attemptId: string): Promise<boolean
   }
 }
 
+export async function syncActivityToCloud(
+  activity: LearningActivity
+): Promise<{ synced: boolean; activityId: string }> {
+  const user = auth.currentUser;
+  if (!isCloudSyncEligibleUser(user)) {
+    return { synced: false, activityId: activity.id };
+  }
+
+  const uid = user.uid;
+  const { safeActivityId, payload } = buildActivityCreatePayload(uid, activity);
+  const activityRef = doc(db, 'activities', safeActivityId);
+  const activityPath = `activities/${safeActivityId}`;
+
+  try {
+    await setDoc(activityRef, payload);
+    return { synced: true, activityId: safeActivityId };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, activityPath);
+  }
+}
+
 function docToExamRecord(data: Record<string, any>): ExamRecord {
   return {
     id: String(data.id || ''),
@@ -584,9 +641,35 @@ function docToUserProfile(docId: string, data: Record<string, any>): UserProfile
   };
 }
 
+function docToLearningActivity(data: Record<string, any>): LearningActivity {
+  const rawType = data.type;
+  const type =
+    rawType === 'video_view' || rawType === 'lesson_view' || rawType === 'visit'
+      ? rawType
+      : 'visit';
+  const ts = Number(data.timestamp) || Date.now();
+  return {
+    id: String(data.id || ''),
+    type,
+    studentId: String(data.studentId || data.ownerUid || ''),
+    studentName: String(data.studentName || 'Học sinh'),
+    studentCode: String(data.studentCode || 'HS'),
+    schoolName: String(data.schoolName || 'TRƯỜNG THPT HÒA BÌNH'),
+    className: String(data.className || '10A1'),
+    lessonId: data.lessonId ? String(data.lessonId) : undefined,
+    lessonTitle: data.lessonTitle ? String(data.lessonTitle) : undefined,
+    timestamp: ts,
+    date: String(data.date || new Date(ts).toLocaleDateString('vi-VN')),
+  };
+}
+
 export function subscribeCloudData(
   user: FirebaseUser,
-  onUpdate: (payload: { attempts?: ExamRecord[]; students?: UserProfile[] }) => void,
+  onUpdate: (payload: {
+    attempts?: ExamRecord[];
+    students?: UserProfile[];
+    activities?: LearningActivity[];
+  }) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
   if (!isCloudSyncEligibleUser(user)) {
@@ -617,6 +700,28 @@ export function subscribeCloudData(
     }
   );
   unsubs.push(unsubAttempts);
+
+  const activitiesQuery = isTeacher
+    ? collection(db, 'activities')
+    : query(collection(db, 'activities'), where('ownerUid', '==', user.uid));
+
+  const unsubActivities = onSnapshot(
+    activitiesQuery,
+    (snapshot) => {
+      const activities = snapshot.docs
+        .map((d) => docToLearningActivity(d.data()))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      onUpdate({ activities });
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'activities');
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) onError(wrapped);
+      }
+    }
+  );
+  unsubs.push(unsubActivities);
 
   if (isTeacher) {
     const unsubStudents = onSnapshot(
@@ -668,6 +773,7 @@ export function subscribeCloudData(
 export async function fetchCloudDataOnce(): Promise<{
   attempts: ExamRecord[];
   students: UserProfile[];
+  activities: LearningActivity[];
 } | null> {
   const user = auth.currentUser;
   if (!isCloudSyncEligibleUser(user)) return null;
@@ -675,6 +781,7 @@ export async function fetchCloudDataOnce(): Promise<{
   const isTeacher = isTeacherFirebaseUser(user);
   let attempts: ExamRecord[] = [];
   let students: UserProfile[] = [];
+  let activities: LearningActivity[] = [];
 
   try {
     const attemptsQuery = isTeacher
@@ -686,6 +793,18 @@ export async function fetchCloudDataOnce(): Promise<{
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'attempts');
+  }
+
+  try {
+    const activitiesQuery = isTeacher
+      ? collection(db, 'activities')
+      : query(collection(db, 'activities'), where('ownerUid', '==', user.uid));
+    const actSnap = await getDocs(activitiesQuery);
+    activities = actSnap.docs
+      .map((d) => docToLearningActivity(d.data()))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'activities');
   }
 
   try {
@@ -702,5 +821,5 @@ export async function fetchCloudDataOnce(): Promise<{
     handleFirestoreError(error, OperationType.GET, isTeacher ? 'students' : `students/${user.uid}`);
   }
 
-  return { attempts, students };
+  return { attempts, students, activities };
 }
