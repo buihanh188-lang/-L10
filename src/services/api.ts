@@ -204,6 +204,7 @@ class ApiService {
   private cloudStudents: UserProfile[] = [];
   private cloudActivities: LearningActivity[] = [];
   private recordedSessionActivityKeys = new Set<string>();
+  private syncingActivityIds = new Set<string>();
   private cloudConnected = false;
   private cloudUserEmail: string | null = null;
   private cloudIsTeacher = false;
@@ -1709,6 +1710,8 @@ class ApiService {
     this.emitDataChanged();
 
     // Silent automatic cloud sync (no Gmail popup needed)
+    if (this.syncingActivityIds.has(activity.id)) return false;
+    this.syncingActivityIds.add(activity.id);
     try {
       if (!isCloudSyncEligibleUser(auth.currentUser)) {
         const session = await ensureAnonymousStudentSession();
@@ -1726,6 +1729,8 @@ class ApiService {
       }
     } catch (e) {
       console.warn('Learning activity queued for retry:', e);
+    } finally {
+      this.syncingActivityIds.delete(activity.id);
     }
     return false;
   }
@@ -1748,6 +1753,11 @@ class ApiService {
     let failed = 0;
     const stillPending: LearningActivity[] = [];
     for (const item of pending) {
+      if (this.syncingActivityIds.has(item.id)) {
+        stillPending.push(item);
+        continue;
+      }
+      this.syncingActivityIds.add(item.id);
       try {
         const res = await syncActivityToCloud(item);
         if (res.synced) {
@@ -1759,6 +1769,8 @@ class ApiService {
       } catch {
         failed++;
         stillPending.push(item);
+      } finally {
+        this.syncingActivityIds.delete(item.id);
       }
     }
     this.savePendingActivities(stillPending);

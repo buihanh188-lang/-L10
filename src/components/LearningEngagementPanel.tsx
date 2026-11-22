@@ -117,7 +117,7 @@ export const LearningEngagementPanel: React.FC = () => {
   const [timeRange, setTimeRange] = useState<'all' | 'today' | '7days' | '30days'>('all');
   const [studentSearch, setStudentSearch] = useState<string>('');
   const [studentStatusFilter, setStudentStatusFilter] = useState<
-    'all' | 'watched_video' | 'studied_lesson' | 'not_watched_video' | 'not_visited'
+    'all' | 'visited_app' | 'watched_video' | 'studied_lesson' | 'not_watched_video' | 'not_visited'
   >('all');
   const [logTypeFilter, setLogTypeFilter] = useState<'all' | LearningActivityType>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -331,18 +331,21 @@ export const LearningEngagementPanel: React.FC = () => {
 
   // Student status counts & filtered list for the roster table
   const studentStatusCounts = useMemo(() => {
+    let visitedApp = 0;
     let watchedVideo = 0;
     let studiedLesson = 0;
     let notWatchedVideo = 0;
     let notVisited = 0;
     studentRows.forEach((r) => {
+      if (r.hasVisited) visitedApp++;
+      else notVisited++;
       if (r.hasWatchedVideo) watchedVideo++;
       else notWatchedVideo++;
       if (r.hasStudiedLesson) studiedLesson++;
-      if (!r.hasVisited) notVisited++;
     });
     return {
       total: studentRows.length,
+      visitedApp,
       watchedVideo,
       studiedLesson,
       notWatchedVideo,
@@ -353,6 +356,7 @@ export const LearningEngagementPanel: React.FC = () => {
   const filteredStudentRows = useMemo(() => {
     const q = studentSearch.trim().toLowerCase();
     return studentRows.filter((row) => {
+      if (studentStatusFilter === 'visited_app' && !row.hasVisited) return false;
       if (studentStatusFilter === 'watched_video' && !row.hasWatchedVideo) return false;
       if (studentStatusFilter === 'studied_lesson' && !row.hasStudiedLesson) return false;
       if (studentStatusFilter === 'not_watched_video' && row.hasWatchedVideo) return false;
@@ -801,8 +805,8 @@ export const LearningEngagementPanel: React.FC = () => {
                   ? 'Students Watched Video'
                   : 'HS đã xem Video bài này'
                 : isEn
-                ? 'Total Learning Visits'
-                : 'Tổng lượt truy cập học tập'}
+                ? 'Total App Visits'
+                : 'Tổng lượt truy cập vào App'}
             </span>
             <span className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
               <Activity className="w-4 h-4" />
@@ -820,7 +824,7 @@ export const LearningEngagementPanel: React.FC = () => {
                 : 'Số học sinh đã bấm xem video bài này'
               : isEn
               ? 'Counted once per browser session'
-              : 'Mỗi phiên vào học của HS tính 1 lượt'}
+              : 'Tính ngay khi HS mở App vào học (1 lượt/phiên)'}
           </div>
         </div>
 
@@ -953,6 +957,14 @@ export const LearningEngagementPanel: React.FC = () => {
                     : `Tất cả HS (${studentStatusCounts.total})`,
                 },
                 {
+                  id: 'visited_app',
+                  label: isEn
+                    ? `Visited App (${studentStatusCounts.visitedApp})`
+                    : selectedLessonObj
+                    ? `Đã học bài này (${studentStatusCounts.visitedApp})`
+                    : `Đã truy cập App (${studentStatusCounts.visitedApp})`,
+                },
+                {
                   id: 'watched_video',
                   label: isEn
                     ? `Watched Video (${studentStatusCounts.watchedVideo})`
@@ -976,7 +988,7 @@ export const LearningEngagementPanel: React.FC = () => {
                     ? `Not Studied Yet (${studentStatusCounts.notVisited})`
                     : selectedLessonObj
                     ? `Chưa học bài này (${studentStatusCounts.notVisited})`
-                    : `Chưa vào học (${studentStatusCounts.notVisited})`,
+                    : `Chưa truy cập App (${studentStatusCounts.notVisited})`,
                 },
               ] as const
             ).map((chip) => (
