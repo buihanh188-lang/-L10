@@ -57,7 +57,10 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
     () => apiService.getPendingAttempts().some((p) => p.id === record.id),
     [record.id, cloudStatus, justSynced]
   );
-  const isSyncedToTeacher = (cloudStatus.connected && !isRecordPending) || justSynced;
+  const isSyncedToTeacher =
+    Boolean((record as any).cloudSynced) ||
+    (cloudStatus.connected && !isRecordPending) ||
+    justSynced;
 
   useEffect(() => {
     return apiService.subscribeToDataChanges(() => {

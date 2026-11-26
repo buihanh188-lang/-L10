@@ -114,6 +114,9 @@ function AppContent() {
               setIsTeacherVerified(true);
             }
           }
+          apiService.startTeacherAutoSync();
+        } else {
+          apiService.stopTeacherAutoSync();
         }
 
         unsubCloud = subscribeCloudData(
@@ -129,6 +132,7 @@ function AppContent() {
         apiService.flushPendingAttempts(StorageService.getCurrentUser() || undefined).catch(() => {});
         apiService.flushPendingActivities().catch(() => {});
       } else {
+        apiService.stopTeacherAutoSync();
         apiService.setCloudAuthContext(null);
       }
     });
@@ -136,26 +140,26 @@ function AppContent() {
     return () => {
       unsubAuth();
       if (unsubCloud) unsubCloud();
+      apiService.stopTeacherAutoSync();
     };
   }, []);
 
-  // Automatically initialize silent anonymous Firebase session for active students (no Gmail required)
+  // Automatically sync active student's profile, pending queue, and prior local history to server + Firebase
   // and silently record 1 learning visit per browser session for private teacher analytics
   React.useEffect(() => {
     if (currentUser?.role === 'student') {
       apiService.recordLearningActivity({ type: 'visit' }, currentUser).catch(() => {});
-      ensureAnonymousStudentSession()
-        .then((res) => {
-          if (res.user) {
-            apiService.flushPendingAttempts(currentUser).catch(() => {});
-            apiService.flushPendingActivities().catch(() => {});
-          }
-        })
-        .catch(() => {});
+      apiService.syncStudentDeviceHistoryToServer(currentUser).catch(() => {});
+      ensureAnonymousStudentSession().catch(() => {});
     }
     const handleOnline = () => {
-      apiService.flushPendingAttempts(StorageService.getCurrentUser() || undefined).catch(() => {});
-      apiService.flushPendingActivities().catch(() => {});
+      const activeUser = StorageService.getCurrentUser();
+      if (activeUser?.role === 'student') {
+        apiService.syncStudentDeviceHistoryToServer(activeUser).catch(() => {});
+      } else {
+        apiService.flushPendingAttempts(activeUser || undefined).catch(() => {});
+        apiService.flushPendingActivities().catch(() => {});
+      }
     };
     window.addEventListener('online', handleOnline);
     return () => {
@@ -696,6 +700,7 @@ function AppContent() {
           onClose={() => setShowAdminLoginModal(false)}
           onSuccess={(teacher) => {
             setCurrentUser(teacher);
+            setIsTeacherVerified(true);
             setShowAdminLoginModal(false);
             setCurrentTab('teacher_admin');
           }}

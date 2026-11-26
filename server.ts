@@ -6,6 +6,8 @@ import crypto from 'crypto';
 import zlib from 'zlib';
 import * as XLSX from 'xlsx';
 import dotenv from 'dotenv';
+import { getApp as getAdminApp, getApps as getAdminApps, initializeApp as initializeAdminApp } from 'firebase-admin/app';
+import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import {
   approveAllCompletedVideos,
   approveAndPublishVideo,
@@ -39,6 +41,22 @@ import {
 } from './server/driveUploadService.ts';
 
 dotenv.config();
+
+let firebaseProjectId = 'gen-lang-client-0394460331';
+try {
+  const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(cfgPath)) {
+    const parsedCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    if (parsedCfg?.projectId) firebaseProjectId = String(parsedCfg.projectId);
+  }
+} catch {
+  // use default project id
+}
+const adminApp = getAdminApps().length
+  ? getAdminApp()
+  : initializeAdminApp({ projectId: firebaseProjectId });
+const adminAuth = getAdminAuth(adminApp);
+const TEACHER_ADMIN_EMAIL = 'buihanh188@gmail.com';
 
 const app = express();
 // Respect CLI --port; in AI Studio containers where nginx binds NGINX_PORT (8080) and forwards to DEFAULT_APP_PORT (3000),
@@ -83,6 +101,7 @@ interface DatabaseShape {
     joinedDate: string;
   }[];
   attempts: any[];
+  activities?: any[];
   questions?: any[];
   teacherExams?: any[];
   updatedAt: number;
@@ -179,11 +198,75 @@ function verifyTeacherToken(token: string): TeacherSession | null {
   return null;
 }
 
+function isLegacyDemoStudentId(id: string): boolean {
+  return /^hs-(hb|cl|hl)-\d{2}$/i.test(String(id || ''));
+}
+
+function isLegacyDemoAttemptId(id: string): boolean {
+  return /^rec-(hb|cl|hl)-\d{3}$/i.test(String(id || ''));
+}
+
+function isLegacyDemoClassId(id: string): boolean {
+  const s = String(id || '');
+  return /^class-(cl|hl)-/i.test(s) || s === 'class-hb-10a3';
+}
+
+function sanitizeLegacyDemoData(data: DatabaseShape): { cleaned: DatabaseShape; changed: boolean } {
+  const origStudentsLen = Array.isArray(data.students) ? data.students.length : 0;
+  const origAttemptsLen = Array.isArray(data.attempts) ? data.attempts.length : 0;
+  const origClassesLen = Array.isArray(data.classes) ? data.classes.length : 0;
+  const origSchoolsLen = Array.isArray(data.schools) ? data.schools.length : 0;
+
+  const students = (data.students || []).filter((s) => s && !isLegacyDemoStudentId(s.id));
+  const attempts = (data.attempts || []).filter(
+    (a) => a && !isLegacyDemoAttemptId(a.id) && !isLegacyDemoStudentId(a.studentId)
+  );
+  const classes = (data.classes || []).filter((c) => c && !isLegacyDemoClassId(c.id));
+  const schools = (data.schools || []).filter((s) => {
+    const k = normalizeSchoolKey(s?.name || '');
+    return k === normalizeSchoolKey('TRƯỜNG THPT HÒA BÌNH') ||
+      students.some((st) => normalizeSchoolKey(st.school) === k) ||
+      attempts.some((a) => normalizeSchoolKey(a.schoolName) === k);
+  });
+  const activities = Array.isArray(data.activities) ? data.activities : [];
+
+  const changed =
+    students.length !== origStudentsLen ||
+    attempts.length !== origAttemptsLen ||
+    classes.length !== origClassesLen ||
+    schools.length !== origSchoolsLen ||
+    !Array.isArray(data.activities);
+
+  return {
+    cleaned: {
+      ...data,
+      schools,
+      classes,
+      students,
+      attempts,
+      activities,
+    },
+    changed,
+  };
+}
+
+let legacyDbCleanedOnce = false;
+
 function loadDatabase(): DatabaseShape {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw) as DatabaseShape;
+      const { cleaned, changed } = sanitizeLegacyDemoData(parsed);
+      if (changed && !legacyDbCleanedOnce) {
+        legacyDbCleanedOnce = true;
+        try {
+          fs.writeFileSync(DATA_FILE, JSON.stringify({ ...cleaned, updatedAt: Date.now() }, null, 2), 'utf-8');
+        } catch {
+          // ignore write error during clean
+        }
+      }
+      return cleaned;
     }
   } catch (err) {
     console.error('Error reading database file:', err);
@@ -193,6 +276,7 @@ function loadDatabase(): DatabaseShape {
     classes: [],
     students: [],
     attempts: [],
+    activities: [],
     updatedAt: Date.now(),
   };
 }
@@ -345,7 +429,51 @@ let db = loadDatabase();
 // AUTHENTICATION & AUTHORIZATION MIDDLEWARE
 // =========================================================================
 
-function requireTeacherAuth(req: Request, res: Response, next: NextFunction) {
+async function verifyFirebaseTeacherToken(token: string): Promise<TeacherSession | null> {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const decoded = await adminAuth.verifyIdToken(token);
+    if (
+      decoded &&
+      decoded.email_verified === true &&
+      String(decoded.email || '').toLowerCase() === TEACHER_ADMIN_EMAIL
+    ) {
+      return {
+        id: 'teacher-bui-thi-hong-hanh',
+        username: 'buihanh188',
+        name: 'Bùi Thị Hồng Hạnh',
+        role: 'teacher',
+        school: 'TRƯỜNG THPT HÒA BÌNH',
+        department: 'TỔ SỬ – ĐỊA – GDKTPL',
+        code: 'GV-DL10',
+        email: decoded.email || TEACHER_ADMIN_EMAIL,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      };
+    }
+  } catch {
+    // not a valid firebase ID token
+  }
+  return null;
+}
+
+async function getTeacherSessionFromReqAsync(req: Request): Promise<TeacherSession | null> {
+  let token = '';
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query.token && typeof req.query.token === 'string') {
+    token = req.query.token;
+  }
+  if (!token) return null;
+
+  const hmacSession = verifyTeacherToken(token);
+  if (hmacSession) return hmacSession;
+
+  return verifyFirebaseTeacherToken(token);
+}
+
+async function requireTeacherAuth(req: Request, res: Response, next: NextFunction) {
   let token = '';
   const authHeader = req.headers['authorization'];
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -361,7 +489,7 @@ function requireTeacherAuth(req: Request, res: Response, next: NextFunction) {
     });
   }
 
-  const session = verifyTeacherToken(token);
+  const session = verifyTeacherToken(token) || (await verifyFirebaseTeacherToken(token));
 
   if (!session) {
     return res.status(403).json({
@@ -1613,7 +1741,7 @@ app.get('/api/teacher/analytics/missed-questions', requireTeacherAuth, (req: Req
 });
 
 // Query Attempts -> RBAC Guarded: Students can only view their own attempts!
-app.get('/api/attempts', (req: Request, res: Response) => {
+app.get('/api/attempts', async (req: Request, res: Response) => {
   db = loadDatabase();
   const {
     schoolName,
@@ -1625,7 +1753,7 @@ app.get('/api/attempts', (req: Request, res: Response) => {
     timeRange,
   } = req.query as Record<string, string>;
 
-  const teacherSession = getTeacherSessionFromReq(req);
+  const teacherSession = await getTeacherSessionFromReqAsync(req);
   const isTeacher = !!teacherSession;
 
   let list = [...db.attempts];
@@ -1916,6 +2044,141 @@ app.post('/api/profile', (req: Request, res: Response) => {
 
   saveDatabase(db);
   res.json(student);
+});
+
+// Record Learning Activity (App visits, Lesson theory views, Video lecture views)
+app.post('/api/activities', (req: Request, res: Response) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object') {
+    return res.status(400).json({ error: 'Dữ liệu hoạt động không hợp lệ.' });
+  }
+  const type = body.type;
+  if (type !== 'visit' && type !== 'video_view' && type !== 'lesson_view') {
+    return res.status(400).json({ error: 'Loại hoạt động không hợp lệ.' });
+  }
+  const studentName = String(body.studentName || '').trim().replace(/\s+/g, ' ');
+  if (!studentName) {
+    return res.status(400).json({ error: 'Thiếu tên học sinh.' });
+  }
+
+  db = loadDatabase();
+  if (!Array.isArray(db.activities)) db.activities = [];
+
+  const incomingId =
+    typeof body.id === 'string' && body.id.trim()
+      ? body.id.trim()
+      : `act-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const existing = db.activities.find((a) => a && a.id === incomingId);
+  if (existing) {
+    return res.status(200).json(existing);
+  }
+
+  const rawSchoolTrim = String(body.schoolName || 'TRƯỜNG THPT HÒA BÌNH').trim().replace(/\s+/g, ' ');
+  const schoolKey = normalizeSchoolKey(rawSchoolTrim);
+  const existingSchObj = db.schools.find((s) => normalizeSchoolKey(s.name) === schoolKey);
+  const schoolTrim = existingSchObj ? existingSchObj.name : rawSchoolTrim;
+  const classTrim = normalizeClassKey(String(body.className || '10A1'));
+  const ts = Number(body.timestamp) || Date.now();
+
+  const activity = {
+    id: incomingId,
+    type,
+    studentId: String(body.studentId || ''),
+    studentName,
+    studentCode: String(body.studentCode || 'HS').trim(),
+    schoolName: schoolTrim,
+    className: classTrim,
+    lessonId: body.lessonId ? String(body.lessonId) : '',
+    lessonTitle: body.lessonTitle ? String(body.lessonTitle) : '',
+    timestamp: ts,
+    date: String(body.date || new Date(ts).toLocaleDateString('vi-VN')),
+  };
+
+  db.activities.unshift(activity);
+  if (db.activities.length > 10000) {
+    db.activities = db.activities.slice(0, 10000);
+  }
+  saveDatabase(db);
+  res.status(201).json(activity);
+});
+
+// Teacher Admin Live Sync Bundle (all student attempts, students, and learning activities)
+app.get('/api/teacher/sync-bundle', requireTeacherAuth, (_req: Request, res: Response) => {
+  db = loadDatabase();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    attempts: [...(db.attempts || [])].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+    students: db.students || [],
+    activities: [...(db.activities || [])].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+    updatedAt: db.updatedAt || Date.now(),
+  });
+});
+
+// Teacher Mirror Restore (restores Firestore cloud records back into server DB if server restarted)
+app.post('/api/teacher/mirror-restore', requireTeacherAuth, (req: Request, res: Response) => {
+  const { attempts = [], activities = [], students = [] } = req.body || {};
+  db = loadDatabase();
+  if (!Array.isArray(db.activities)) db.activities = [];
+
+  let addedAttempts = 0;
+  let addedActivities = 0;
+  let addedStudents = 0;
+
+  if (Array.isArray(attempts)) {
+    const attIds = new Set(db.attempts.map((a) => a?.id).filter(Boolean));
+    for (const att of attempts) {
+      if (!att || !att.id || isLegacyDemoAttemptId(att.id) || attIds.has(att.id)) continue;
+      attIds.add(att.id);
+      db.attempts.push(att);
+      addedAttempts++;
+    }
+    db.attempts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }
+
+  if (Array.isArray(activities)) {
+    const actIds = new Set(db.activities.map((a) => a?.id).filter(Boolean));
+    for (const act of activities) {
+      if (!act || !act.id || actIds.has(act.id)) continue;
+      actIds.add(act.id);
+      db.activities.push(act);
+      addedActivities++;
+    }
+    db.activities.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }
+
+  if (Array.isArray(students)) {
+    const stIds = new Set(db.students.map((s) => s?.id).filter(Boolean));
+    for (const st of students) {
+      if (!st || !st.id || isLegacyDemoStudentId(st.id) || stIds.has(st.id)) continue;
+      stIds.add(st.id);
+      db.students.push(st);
+      addedStudents++;
+    }
+  }
+
+  if (addedAttempts > 0 || addedActivities > 0 || addedStudents > 0) {
+    saveDatabase(db);
+  }
+
+  res.json({
+    success: true,
+    addedAttempts,
+    addedActivities,
+    addedStudents,
+  });
+});
+
+// Delete Attempt -> STRICT TEACHER AUTH REQUIRED
+app.delete('/api/attempts/:id', requireTeacherAuth, (req: Request, res: Response) => {
+  const { id } = req.params;
+  db = loadDatabase();
+  const before = db.attempts.length;
+  db.attempts = db.attempts.filter((a) => a && a.id !== id);
+  if (db.attempts.length !== before) {
+    saveDatabase(db);
+  }
+  res.json({ success: true, id });
 });
 
 // =========================================================================

@@ -208,6 +208,16 @@ export function subscribeFirebaseAuth(
   return onAuthStateChanged(auth, callback);
 }
 
+export async function getCurrentFirebaseIdToken(forceRefresh = false): Promise<string | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken(forceRefresh);
+  } catch {
+    return null;
+  }
+}
+
 // =========================================================================
 // DEFENSIVE PAYLOAD SANITIZATION (STRICT BLUEPRINT SYNCHRONICITY)
 // =========================================================================
@@ -506,6 +516,13 @@ export async function syncAttemptToCloud(
   const attemptPath = `attempts/${safeAttemptId}`;
 
   try {
+    // If teacher admin is mirroring a server-captured student record into Firestore,
+    // write the attempt doc directly (rules allow isAdmin() without requiring students/{teacherUid})
+    if (isTeacherFirebaseUser(user)) {
+      await setDoc(attemptRef, payload);
+      return { synced: true, attemptId: safeAttemptId };
+    }
+
     const studentSnap = await getDoc(studentRef);
     const batch = writeBatch(db);
 
@@ -538,7 +555,7 @@ export async function syncAttemptToCloud(
     await batch.commit();
     return { synced: true, attemptId: safeAttemptId };
   } catch (error) {
-    // Idempotency check: if this attempt already exists and belongs to this user, treat as synced
+    // Idempotency check: if this attempt already exists and belongs to this user or admin, treat as synced
     try {
       const existingAttempt = await getDoc(attemptRef);
       if (existingAttempt.exists()) {
@@ -582,8 +599,65 @@ export async function syncActivityToCloud(
     await setDoc(activityRef, payload);
     return { synced: true, activityId: safeActivityId };
   } catch (error) {
+    try {
+      const existing = await getDoc(activityRef);
+      if (existing.exists()) {
+        return { synced: true, activityId: safeActivityId };
+      }
+    } catch {
+      // ignore
+    }
     handleFirestoreError(error, OperationType.CREATE, activityPath);
   }
+}
+
+export async function mirrorRecordsToFirestoreAsTeacher(params: {
+  attempts: ExamRecord[];
+  activities: LearningActivity[];
+  knownCloudAttemptIds: Set<string>;
+  knownCloudActivityIds: Set<string>;
+}): Promise<{ mirroredAttempts: number; mirroredActivities: number }> {
+  const user = auth.currentUser;
+  if (!isTeacherFirebaseUser(user)) {
+    return { mirroredAttempts: 0, mirroredActivities: 0 };
+  }
+
+  let mirroredAttempts = 0;
+  let mirroredActivities = 0;
+
+  const missingAttempts = params.attempts
+    .filter((a) => a && a.id && !params.knownCloudAttemptIds.has(sanitizeFirestoreId(a.id, 'att')))
+    .slice(0, 25);
+
+  for (const att of missingAttempts) {
+    try {
+      const res = await syncAttemptToCloud(att);
+      if (res.synced) {
+        params.knownCloudAttemptIds.add(res.attemptId);
+        mirroredAttempts++;
+      }
+    } catch {
+      // non-blocking
+    }
+  }
+
+  const missingActivities = params.activities
+    .filter((a) => a && a.id && !params.knownCloudActivityIds.has(sanitizeFirestoreId(a.id, 'act')))
+    .slice(0, 35);
+
+  for (const act of missingActivities) {
+    try {
+      const res = await syncActivityToCloud(act);
+      if (res.synced) {
+        params.knownCloudActivityIds.add(res.activityId);
+        mirroredActivities++;
+      }
+    } catch {
+      // non-blocking
+    }
+  }
+
+  return { mirroredAttempts, mirroredActivities };
 }
 
 function docToExamRecord(data: Record<string, any>): ExamRecord {

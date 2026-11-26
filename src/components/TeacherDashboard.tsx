@@ -758,7 +758,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       </div>
 
-      {/* Live Firebase Cloud Sync Status Banner */}
+      {/* Live Server + Firebase Cloud Dual-Sync Status Banner */}
       {cloudStatus.connected && cloudStatus.isTeacher ? (
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 text-xs sm:text-sm text-emerald-950">
@@ -769,17 +769,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="font-extrabold text-emerald-900 flex flex-wrap items-center gap-2">
                 <span>
                   {isEn
-                    ? 'Firebase Cloud Connected — Live Student Score Sync Active'
-                    : 'Đã kết nối Firebase Cloud — Điểm học sinh tự động đổ về trực tiếp'}
+                    ? 'Auto-Sync Active (Server + Firebase Cloud) — Live Student Scores & Visits'
+                    : 'Đã kết nối Tự Động (Server + Firebase Cloud) — Điểm & lượt học tự động đổ về trực tiếp'}
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[11px] font-bold">
-                  {cloudStatus.cloudAttemptCount} {isEn ? 'cloud submissions' : 'bài đã đồng bộ'}
+                  {cloudStatus.cloudAttemptCount} {isEn ? 'synced submissions' : 'bài đã đồng bộ'}
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-sky-600 text-white text-[11px] font-bold">
+                  {cloudStatus.cloudActivityCount} {isEn ? 'learning visits' : 'lượt học & xem'}
                 </span>
               </div>
               <p className="text-[11px] text-emerald-800/90 mt-0.5">
                 {isEn
-                  ? `Signed in as ${cloudStatus.email}. Whenever any student submits an exercise, scores update automatically here.`
-                  : `Tài khoản giáo viên: ${cloudStatus.email}. Học sinh nộp bài trên điện thoại là điểm tự động hiện ngay tại đây, không cần gửi qua Zalo.`}
+                  ? `Signed in as ${cloudStatus.email}. All student quiz scores, app visits, lesson views, and video views sync automatically here.`
+                  : `Tài khoản giáo viên: ${cloudStatus.email}. Học sinh vào học, xem bài/video hoặc nộp bài trên điện thoại là dữ liệu tự động đổ thẳng về đây, không cần bấm thao tác gì thêm.`}
               </p>
             </div>
           </div>
@@ -790,7 +793,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${connectingCloud ? 'animate-spin' : ''}`} />
-            <span>{isEn ? 'Refresh Now' : 'Cập nhật ngay'}</span>
+            <span>{isEn ? 'Refresh Now' : 'Làm mới ngay'}</span>
           </button>
         </div>
       ) : (
@@ -2149,13 +2152,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div>
                 <h2 className="text-xl font-bold">
                   {isEn
-                    ? 'Firebase Cloud Real-Time Synchronization'
-                    : 'Đồng Bộ Đám Mây Firebase Cloud (Trực Tiếp)'}
+                    ? 'Automatic Dual-Sync (Server + Firebase Cloud)'
+                    : 'Đồng Bộ Tự Động Kép (Máy Chủ + Firebase Cloud)'}
                 </h2>
                 <p className="text-xs text-slate-500">
                   {isEn
-                    ? 'Automatic student score syncing across phones, tablets, and computers'
-                    : 'Tự động thu nhận điểm bài làm của học sinh trên mọi thiết bị về Trang quản trị'}
+                    ? 'Automatic zero-click syncing of scores, visits, lesson views, and video views across all student devices'
+                    : 'Tự động thu nhận điểm bài làm và lượt vào học/xem video từ mọi thiết bị học sinh về Trang quản trị'}
                 </p>
               </div>
             </div>
@@ -2168,7 +2171,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${connectingCloud ? 'animate-spin' : ''}`} />
-                <span>{isEn ? 'Sync Latest Scores Now' : 'Cập nhật điểm mới nhất ngay'}</span>
+                <span>{isEn ? 'Sync Latest Data Now' : 'Làm mới dữ liệu ngay'}</span>
               </button>
             ) : (
               <button
@@ -2197,14 +2200,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>
                   {isEn
-                    ? 'Status: Connected to Firebase Cloud — Automatic Live Sync Active'
-                    : 'Trạng thái hiện tại: Đã kết nối Firebase Cloud — Tự động nhận điểm trực tiếp'}
+                    ? 'Status: Automatic Dual-Sync Active (Server + Firebase Cloud)'
+                    : 'Trạng thái hiện tại: Đang hoạt động Tự Động hoàn toàn (Server + Firebase Cloud)'}
                 </span>
               </div>
               <p className="text-emerald-900/90">
                 {isEn
-                  ? `Teacher account: ${cloudStatus.email}. Synced ${cloudStatus.cloudAttemptCount} exam/practice submissions and ${cloudStatus.cloudStudentCount} student profiles from Firestore.`
-                  : `Tài khoản giáo viên đang kết nối: ${cloudStatus.email}. Đã đồng bộ trực tiếp ${cloudStatus.cloudAttemptCount} bài làm và ${cloudStatus.cloudStudentCount} hồ sơ học sinh từ Firestore.`}
+                  ? `Teacher account: ${cloudStatus.email}. Synced ${cloudStatus.cloudAttemptCount} submissions, ${cloudStatus.cloudActivityCount} learning/video visits, and ${cloudStatus.cloudStudentCount} student profiles.`
+                  : `Tài khoản giáo viên: ${cloudStatus.email}. Đã đồng bộ trực tiếp ${cloudStatus.cloudAttemptCount} bài làm, ${cloudStatus.cloudActivityCount} lượt vào app / xem bài / xem video và ${cloudStatus.cloudStudentCount} hồ sơ học sinh.`}
               </p>
             </div>
           ) : (
@@ -2213,50 +2216,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
                   {isEn
-                    ? 'Status: Local Password Session (Click Connect Google to enable live Firebase Cloud sync)'
-                    : 'Trạng thái hiện tại: Chưa kết nối Gmail giáo viên — Bấm nút "Kết nối Google" ở trên để bật đồng bộ trực tiếp'}
+                    ? 'Status: Connect Teacher Google Account to Unlock Live Sync'
+                    : 'Trạng thái hiện tại: Chưa kết nối Gmail giáo viên — Bấm nút "Kết nối Google" ở trên để nhận dữ liệu'}
                 </span>
               </div>
               <p className="text-amber-900">
                 {cloudConnectError ||
                   (isEn
-                    ? 'Firebase Firestore is already configured and deployed. Sign in once with buihanh188@gmail.com so all student submissions flow straight into your gradebook.'
-                    : 'Hệ thống Firebase Firestore đã được cài đặt sẵn. Cô chỉ cần bấm "Kết nối Google" và chọn Gmail buihanh188@gmail.com để tự động nhận toàn bộ điểm học sinh làm bài từ xa.')}
+                    ? 'Sign in once with buihanh188@gmail.com so all student submissions and visits flow automatically into your dashboard.'
+                    : 'Cô chỉ cần đăng nhập 1 lần bằng Gmail buihanh188@gmail.com tại cổng /admin để tự động nhận toàn bộ điểm làm bài và lượt truy cập của học sinh.')}
               </p>
             </div>
           )}
 
-          {/* Silent Student Auto-Sync Setup Guide */}
+          {/* Automatic Zero-Click Sync Summary */}
           <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-xs text-blue-950 space-y-2 leading-relaxed">
             <div className="font-extrabold text-blue-900">
               {isEn
-                ? 'Automatic Score Submission Without Student Gmail (1-Time Switch):'
-                : 'Chế độ tự động nhận điểm KHÔNG cần học sinh đăng nhập Gmail (Bật 1 lần duy nhất):'}
+                ? 'Zero-Click Automatic Sync Mode:'
+                : 'Cơ chế Tự Động Đồng Bộ 100% (Không cần học sinh hay giáo viên bấm thêm gì):'}
             </div>
             <p className="text-blue-900/90">
               {isEn
-                ? 'Students never need to click "Connect Google" — they simply log in with their Student Code and submit. To activate silent background sync on Firebase, make sure "Anonymous" sign-in is enabled once in Firebase Console:'
-                : 'Học sinh chỉ cần nhập Mã học sinh (hoặc Họ tên) và làm bài, nộp bài xong điểm tự động đổ thẳng về bảng điểm của cô mà không cần bấm Gmail. Để kích hoạt 1 lần duy nhất, cô bật mục Anonymous (Ẩn danh) tại Firebase Console:'}
+                ? 'Students only log in with their Student Code or Full Name/Class. Every app visit, lesson view, video lecture view, and quiz submission is automatically pushed to the backend server and mirrored into Firebase Cloud for Teacher Admin.'
+                : 'Học sinh chỉ cần vào link ứng dụng bằng Mã học sinh hoặc Họ tên/Lớp như bình thường. Mọi lượt truy cập app, lượt xem bài học, lượt xem video và điểm bài làm đều tự động gửi thẳng về máy chủ hệ thống và sao lưu kép lên Firebase Cloud cho cô theo dõi liên tục.'}
             </p>
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <a
-                href="https://console.firebase.google.com/project/gen-lang-client-0394460331/authentication/providers"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition"
-              >
-                <span>
-                  {isEn
-                    ? 'Open Firebase Authentication Providers'
-                    : 'Mở Firebase Console → Bật Anonymous (Ẩn danh)'}
-                </span>
-              </a>
-              <span className="text-[11px] text-blue-800">
-                {isEn
-                  ? 'Add new provider → Anonymous → Enable → Save'
-                  : 'Chọn Add new provider → Anonymous → Bật Enable → Save'}
-              </span>
-            </div>
           </div>
 
           <div className="space-y-3">

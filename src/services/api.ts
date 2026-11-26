@@ -46,9 +46,11 @@ import {
   deleteAttemptFromCloud,
   ensureAnonymousStudentSession,
   fetchCloudDataOnce,
+  getCurrentFirebaseIdToken,
   isCloudSyncEligibleUser,
   isTeacherFirebaseUser,
   isVerifiedFirebaseUser,
+  mirrorRecordsToFirestoreAsTeacher,
   sanitizeFirestoreId,
   signInWithGooglePopup,
   signOutFirebase,
@@ -129,6 +131,19 @@ function stripDiacriticsLower(s: string): string {
     .trim();
 }
 
+function isLegacyDemoStudentId(id: string): boolean {
+  return /^hs-(hb|cl|hl)-\d{2}$/i.test(String(id || ''));
+}
+
+function isLegacyDemoAttemptId(id: string): boolean {
+  return /^rec-(hb|cl|hl)-\d{3}$/i.test(String(id || ''));
+}
+
+function isLegacyDemoClassId(id: string): boolean {
+  const s = String(id || '');
+  return /^class-(cl|hl)-/i.test(s) || s === 'class-hb-10a3';
+}
+
 function defaultVideoQueue(): VideoQueueState {
   return {
     isRunning: false,
@@ -203,6 +218,12 @@ class ApiService {
   private cloudAttempts: ExamRecord[] = [];
   private cloudStudents: UserProfile[] = [];
   private cloudActivities: LearningActivity[] = [];
+  private serverAttempts: ExamRecord[] = [];
+  private serverStudents: UserProfile[] = [];
+  private serverActivities: LearningActivity[] = [];
+  private serverConnected = false;
+  private teacherPollTimer: number | null = null;
+  private bidirectionalSyncRunning = false;
   private recordedSessionActivityKeys = new Set<string>();
   private syncingActivityIds = new Set<string>();
   private cloudConnected = false;
@@ -218,11 +239,6 @@ class ApiService {
     try {
       if (typeof window === 'undefined') return;
       if (safeGetItem(ROSTER_VERSION_KEY) === CURRENT_ROSTER_VERSION) return;
-
-      const isLegacyDemoStudentId = (id: string) => /^hs-(hb|cl|hl)-\d{2}$/i.test(String(id || ''));
-      const isLegacyDemoAttemptId = (id: string) => /^rec-(hb|cl|hl)-\d{3}$/i.test(String(id || ''));
-      const isLegacyDemoClassId = (id: string) =>
-        /^class-(cl|hl)-/i.test(String(id || '')) || id === 'class-hb-10a3';
 
       // Clean legacy fake demo students while preserving any real added students
       const rawStudents = safeGetItem(STUDENTS_KEY);
@@ -279,6 +295,225 @@ class ApiService {
     });
   }
 
+  private async getTeacherAuthHeaders(): Promise<Record<string, string> | null> {
+    try {
+      const idToken = await getCurrentFirebaseIdToken();
+      if (idToken) {
+        return { Authorization: `Bearer ${idToken}` };
+      }
+    } catch {
+      // ignore
+    }
+    const storedToken = this.getTeacherToken();
+    if (storedToken && !storedToken.startsWith('firebase-teacher-')) {
+      return { Authorization: `Bearer ${storedToken}` };
+    }
+    return null;
+  }
+
+  private async postAttemptToServer(record: ExamRecord): Promise<boolean> {
+    try {
+      const res = await fetch('/api/attempts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record),
+      });
+      const ct = res.headers.get('content-type') || '';
+      if (!res.ok || !ct.includes('application/json')) return false;
+      const data = await res.json();
+      if (data && data.id) {
+        this.serverConnected = true;
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  private async postActivityToServer(activity: LearningActivity): Promise<boolean> {
+    try {
+      const res = await fetch('/api/activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(activity),
+      });
+      const ct = res.headers.get('content-type') || '';
+      if (!res.ok || !ct.includes('application/json')) return false;
+      const data = await res.json();
+      if (data && data.id) {
+        this.serverConnected = true;
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  private async postProfileToServer(profile: UserProfile): Promise<boolean> {
+    try {
+      if (!profile.name || !profile.school || !profile.className) return false;
+      const res = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: profile.name,
+          school: profile.school,
+          className: profile.className,
+          code: profile.code,
+          commune: profile.commune,
+          province: profile.province,
+        }),
+      });
+      const ct = res.headers.get('content-type') || '';
+      if (!res.ok || !ct.includes('application/json')) return false;
+      const data = await res.json();
+      if (data && data.id) {
+        this.serverConnected = true;
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  private mergeAttemptsIntoLocalCache(attempts: ExamRecord[]): boolean {
+    const localMap = new Map<string, ExamRecord>();
+    try {
+      const raw = safeGetItem(EXAM_RECORDS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        parsed.forEach((r: ExamRecord) => {
+          if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
+            localMap.set(r.id, r);
+          }
+        });
+      }
+    } catch {
+      // ignore
+    }
+    const prevSize = localMap.size;
+    let changed = false;
+    attempts.forEach((r) => {
+      if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
+        if (!localMap.has(r.id)) changed = true;
+        localMap.set(r.id, r);
+        this.ensureClassExistsLocal(r.className, r.schoolName);
+      }
+    });
+    if (changed || localMap.size !== prevSize) {
+      this.saveLocalAttemptsList(Array.from(localMap.values()));
+      return true;
+    }
+    return false;
+  }
+
+  private mergeStudentsIntoLocalCache(students: UserProfile[]): boolean {
+    if (!students || students.length === 0) return false;
+    const deleted = this.getDeletedStudentIds();
+    const current = this.getAllStudentsLocal();
+    const byId = new Map<string, UserProfile>();
+    current.forEach((s) => {
+      if (s && s.id && !deleted.has(s.id) && !isLegacyDemoStudentId(s.id)) {
+        byId.set(s.id, s);
+      }
+    });
+    let changed = false;
+    students.forEach((st) => {
+      if (!st || !st.id || deleted.has(st.id) || isLegacyDemoStudentId(st.id)) return;
+      const normalizedSchool = normalizeSchoolName(st.school || 'TRƯỜNG THPT HÒA BÌNH');
+      const normalized: UserProfile = {
+        ...st,
+        name: normalizeStudentName(st.name || 'Học sinh'),
+        school: normalizedSchool,
+        className: normalizeClassName(st.className || '10A1'),
+        studentType:
+          st.studentType ||
+          (normalizeSchoolKey(normalizedSchool) === OFFICIAL_SCHOOL_KEY ? 'official' : 'extended'),
+      };
+      if (!byId.has(st.id)) {
+        changed = true;
+      }
+      byId.set(st.id, { ...(byId.get(st.id) || {}), ...normalized });
+      if (normalized.className) {
+        this.ensureClassExistsLocal(normalized.className, normalized.school);
+      }
+    });
+    if (changed) {
+      this.saveStudentsLocal(Array.from(byId.values()));
+    }
+    return changed;
+  }
+
+  private mergeActivitiesIntoLocalCache(activities: LearningActivity[]): boolean {
+    const actMap = new Map<string, LearningActivity>();
+    this.getLocalActivitiesList().forEach((a) => {
+      if (a && a.id) actMap.set(a.id, a);
+    });
+    const prevSize = actMap.size;
+    let changed = false;
+    activities.forEach((a) => {
+      if (a && a.id) {
+        if (!actMap.has(a.id)) changed = true;
+        actMap.set(a.id, a);
+      }
+    });
+    if (changed || actMap.size !== prevSize) {
+      this.saveLocalActivitiesList(Array.from(actMap.values()));
+      return true;
+    }
+    return false;
+  }
+
+  private setServerSyncData(payload: {
+    attempts?: ExamRecord[];
+    students?: UserProfile[];
+    activities?: LearningActivity[];
+  }): boolean {
+    const wasConnected = this.serverConnected;
+    this.serverConnected = true;
+    let changed = !wasConnected;
+
+    if (Array.isArray(payload.attempts)) {
+      const clean = payload.attempts.filter(
+        (r) => r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
+      );
+      if (
+        clean.length !== this.serverAttempts.length ||
+        clean[0]?.id !== this.serverAttempts[0]?.id
+      ) {
+        changed = true;
+      }
+      this.serverAttempts = clean;
+      if (this.mergeAttemptsIntoLocalCache(clean)) changed = true;
+    }
+
+    if (Array.isArray(payload.students)) {
+      const clean = payload.students.filter((s) => s && s.id && !isLegacyDemoStudentId(s.id));
+      if (clean.length !== this.serverStudents.length) {
+        changed = true;
+      }
+      this.serverStudents = clean;
+      if (this.mergeStudentsIntoLocalCache(clean)) changed = true;
+    }
+
+    if (Array.isArray(payload.activities)) {
+      const clean = payload.activities.filter((a) => a && a.id);
+      if (
+        clean.length !== this.serverActivities.length ||
+        clean[0]?.id !== this.serverActivities[0]?.id
+      ) {
+        changed = true;
+      }
+      this.serverActivities = clean;
+      if (this.mergeActivitiesIntoLocalCache(clean)) changed = true;
+    }
+
+    return changed;
+  }
+
   setCloudAuthContext(
     user: { uid: string; email?: string | null; emailVerified?: boolean; isAnonymous?: boolean } | null
   ): void {
@@ -295,6 +530,11 @@ class ApiService {
       this.cloudAttempts = [];
       this.cloudStudents = [];
       this.cloudActivities = [];
+      this.serverConnected = false;
+      this.serverAttempts = [];
+      this.serverStudents = [];
+      this.serverActivities = [];
+      this.stopTeacherAutoSync();
     }
     this.emitDataChanged();
   }
@@ -305,48 +545,22 @@ class ApiService {
     activities?: LearningActivity[];
   }): void {
     if (payload.attempts) {
-      this.cloudAttempts = payload.attempts;
-      // Merge cloud attempts into localStorage cache so offline views remain warm
-      const localMap = new Map<string, ExamRecord>();
-      try {
-        const raw = safeGetItem(EXAM_RECORDS_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        if (Array.isArray(parsed)) {
-          parsed.forEach((r: ExamRecord) => {
-            if (r && r.id) localMap.set(r.id, r);
-          });
-        }
-      } catch {
-        // ignore
-      }
-      payload.attempts.forEach((r) => {
-        if (r && r.id) {
-          localMap.set(r.id, r);
-          this.ensureClassExistsLocal(r.className, r.schoolName);
-        }
-      });
-      this.saveLocalAttemptsList(Array.from(localMap.values()));
+      const clean = payload.attempts.filter(
+        (r) => r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
+      );
+      this.cloudAttempts = clean;
+      this.mergeAttemptsIntoLocalCache(clean);
     }
 
     if (payload.students) {
-      this.cloudStudents = payload.students;
-      payload.students.forEach((st) => {
-        if (st && st.className) {
-          this.ensureClassExistsLocal(st.className, st.school);
-        }
-      });
+      const clean = payload.students.filter((s) => s && s.id && !isLegacyDemoStudentId(s.id));
+      this.cloudStudents = clean;
+      this.mergeStudentsIntoLocalCache(clean);
     }
 
     if (payload.activities) {
-      this.cloudActivities = payload.activities;
-      const actMap = new Map<string, LearningActivity>();
-      this.getLocalActivitiesList().forEach((a) => {
-        if (a && a.id) actMap.set(a.id, a);
-      });
-      payload.activities.forEach((a) => {
-        if (a && a.id) actMap.set(a.id, a);
-      });
-      this.saveLocalActivitiesList(Array.from(actMap.values()));
+      this.cloudActivities = payload.activities.filter((a) => a && a.id);
+      this.mergeActivitiesIntoLocalCache(this.cloudActivities);
     }
 
     this.emitDataChanged();
@@ -363,15 +577,28 @@ class ApiService {
     pendingCount: number;
   } {
     const current = auth.currentUser;
-    const connected = isCloudSyncEligibleUser(current) || this.cloudConnected;
+    const connected = isCloudSyncEligibleUser(current) || this.cloudConnected || this.serverConnected;
+    const uniqueAttemptIds = new Set([
+      ...this.cloudAttempts.map((a) => sanitizeFirestoreId(a.id, 'att')),
+      ...this.serverAttempts.map((a) => sanitizeFirestoreId(a.id, 'att')),
+    ]);
+    const uniqueStudentIds = new Set([
+      ...this.cloudStudents.map((s) => s.id),
+      ...this.serverStudents.map((s) => s.id),
+    ]);
+    const uniqueActivityIds = new Set([
+      ...this.cloudActivities.map((a) => sanitizeFirestoreId(a.id, 'act')),
+      ...this.serverActivities.map((a) => sanitizeFirestoreId(a.id, 'act')),
+    ]);
+
     return {
       connected,
       email: current?.email || this.cloudUserEmail,
       isTeacher: isTeacherFirebaseUser(current) || this.cloudIsTeacher,
       isAnonymous: Boolean(current?.isAnonymous),
-      cloudAttemptCount: this.cloudAttempts.length,
-      cloudStudentCount: this.cloudStudents.length,
-      cloudActivityCount: this.cloudActivities.length,
+      cloudAttemptCount: uniqueAttemptIds.size,
+      cloudStudentCount: uniqueStudentIds.size,
+      cloudActivityCount: uniqueActivityIds.size,
       pendingCount: this.getPendingAttempts().length,
     };
   }
@@ -380,38 +607,179 @@ class ApiService {
     profile?: UserProfile | null
   ): Promise<{ synced: boolean; syncedPending: number; needsConsoleEnable?: boolean }> {
     const session = await ensureAnonymousStudentSession();
-    if (!session.user) {
-      return {
-        synced: false,
-        syncedPending: 0,
-        needsConsoleEnable: session.needsConsoleEnable,
-      };
-    }
-    this.setCloudAuthContext(session.user);
-    if (profile && profile.role === 'student') {
-      try {
-        await syncStudentProfileToCloud(profile);
-      } catch {
-        // non-blocking
+    if (session.user) {
+      this.setCloudAuthContext(session.user);
+      if (profile && profile.role === 'student') {
+        syncStudentProfileToCloud(profile).catch(() => {});
       }
     }
-    const flushed = await this.flushPendingAttempts(profile || undefined);
-    await this.flushPendingActivities().catch(() => {});
+    if (profile && profile.role === 'student') {
+      this.postProfileToServer(profile).catch(() => {});
+    }
+
+    const flushedAttempts = await this.flushPendingAttempts(profile || undefined);
+    const flushedActivities = await this.flushPendingActivities();
     await this.refreshCloudData();
-    return { synced: flushed.failed === 0, syncedPending: flushed.synced };
+
+    const remainingPending = this.getPendingAttempts().length + this.getPendingActivities().length;
+    return {
+      synced: remainingPending === 0 && flushedAttempts.failed === 0 && flushedActivities.failed === 0,
+      syncedPending: flushedAttempts.synced + flushedActivities.synced,
+      needsConsoleEnable: !this.serverConnected && session.needsConsoleEnable,
+    };
   }
 
-  async refreshCloudData(): Promise<boolean> {
+  private async runTeacherBidirectionalSync(headers: Record<string, string>): Promise<void> {
+    if (this.bidirectionalSyncRunning || !isTeacherFirebaseUser(auth.currentUser)) return;
+    this.bidirectionalSyncRunning = true;
+    try {
+      const knownCloudAttemptIds = new Set(
+        this.cloudAttempts.map((a) => sanitizeFirestoreId(a.id, 'att'))
+      );
+      const knownCloudActivityIds = new Set(
+        this.cloudActivities.map((a) => sanitizeFirestoreId(a.id, 'act'))
+      );
+
+      // 1. Server-only records -> mirror to Firestore
+      if (this.serverAttempts.length > 0 || this.serverActivities.length > 0) {
+        await mirrorRecordsToFirestoreAsTeacher({
+          attempts: this.serverAttempts,
+          activities: this.serverActivities,
+          knownCloudAttemptIds,
+          knownCloudActivityIds,
+        }).catch(() => {});
+      }
+
+      // 2. Firestore-only records -> restore to Server database
+      const knownServerAttemptIds = new Set(
+        this.serverAttempts.map((a) => sanitizeFirestoreId(a.id, 'att'))
+      );
+      const knownServerActivityIds = new Set(
+        this.serverActivities.map((a) => sanitizeFirestoreId(a.id, 'act'))
+      );
+      const knownServerStudentIds = new Set(this.serverStudents.map((s) => s.id));
+
+      const missingServerAttempts = this.cloudAttempts.filter(
+        (a) => a && a.id && !knownServerAttemptIds.has(sanitizeFirestoreId(a.id, 'att'))
+      );
+      const missingServerActivities = this.cloudActivities.filter(
+        (a) => a && a.id && !knownServerActivityIds.has(sanitizeFirestoreId(a.id, 'act'))
+      );
+      const missingServerStudents = this.cloudStudents.filter(
+        (s) => s && s.id && !knownServerStudentIds.has(s.id)
+      );
+
+      if (
+        missingServerAttempts.length > 0 ||
+        missingServerActivities.length > 0 ||
+        missingServerStudents.length > 0
+      ) {
+        await fetch('/api/teacher/mirror-restore', {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            attempts: missingServerAttempts,
+            activities: missingServerActivities,
+            students: missingServerStudents,
+          }),
+        }).catch(() => {});
+      }
+    } finally {
+      this.bidirectionalSyncRunning = false;
+    }
+  }
+
+  async refreshCloudData(options?: { forceEmit?: boolean }): Promise<boolean> {
+    let anySuccess = false;
+    let shouldEmit = Boolean(options?.forceEmit);
+    let teacherHeaders: Record<string, string> | null = null;
+
+    if (isTeacherFirebaseUser(auth.currentUser)) {
+      teacherHeaders = await this.getTeacherAuthHeaders();
+      if (teacherHeaders) {
+        try {
+          const res = await fetch('/api/teacher/sync-bundle', {
+            headers: teacherHeaders,
+            cache: 'no-store',
+          });
+          const ct = res.headers.get('content-type') || '';
+          if (res.ok && ct.includes('application/json')) {
+            const bundle = await res.json();
+            const serverChanged = this.setServerSyncData({
+              attempts: Array.isArray(bundle?.attempts) ? bundle.attempts : [],
+              students: Array.isArray(bundle?.students) ? bundle.students : [],
+              activities: Array.isArray(bundle?.activities) ? bundle.activities : [],
+            });
+            if (serverChanged) shouldEmit = true;
+            anySuccess = true;
+          }
+        } catch (e) {
+          console.warn('Server sync-bundle fetch warning:', e);
+        }
+      }
+    }
+
     try {
       const snap = await fetchCloudDataOnce();
       if (snap) {
-        this.setCloudSyncData(snap);
-        return true;
+        const cleanAttempts = snap.attempts.filter(
+          (r) => r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
+        );
+        const cleanStudents = snap.students.filter((s) => s && s.id && !isLegacyDemoStudentId(s.id));
+        const cleanActivities = snap.activities.filter((a) => a && a.id);
+
+        if (
+          cleanAttempts.length !== this.cloudAttempts.length ||
+          cleanAttempts[0]?.id !== this.cloudAttempts[0]?.id ||
+          cleanStudents.length !== this.cloudStudents.length ||
+          cleanActivities.length !== this.cloudActivities.length ||
+          cleanActivities[0]?.id !== this.cloudActivities[0]?.id
+        ) {
+          shouldEmit = true;
+        }
+
+        this.cloudAttempts = cleanAttempts;
+        this.cloudStudents = cleanStudents;
+        this.cloudActivities = cleanActivities;
+        if (this.mergeAttemptsIntoLocalCache(cleanAttempts)) shouldEmit = true;
+        if (this.mergeStudentsIntoLocalCache(cleanStudents)) shouldEmit = true;
+        if (this.mergeActivitiesIntoLocalCache(cleanActivities)) shouldEmit = true;
+        anySuccess = true;
       }
-      return false;
     } catch (e) {
-      console.warn('refreshCloudData failed:', e);
-      return false;
+      console.warn('refreshCloudData Firestore notice:', e);
+    }
+
+    if (teacherHeaders && isTeacherFirebaseUser(auth.currentUser)) {
+      this.runTeacherBidirectionalSync(teacherHeaders).catch(() => {});
+    }
+
+    if (shouldEmit) {
+      this.emitDataChanged();
+    }
+    return anySuccess;
+  }
+
+  startTeacherAutoSync(): void {
+    if (typeof window === 'undefined') return;
+    this.refreshCloudData({ forceEmit: true }).catch(() => {});
+    if (this.teacherPollTimer !== null) return;
+    this.teacherPollTimer = window.setInterval(() => {
+      if (isTeacherFirebaseUser(auth.currentUser)) {
+        this.refreshCloudData().catch(() => {});
+      } else {
+        this.stopTeacherAutoSync();
+      }
+    }, 15000);
+  }
+
+  stopTeacherAutoSync(): void {
+    if (typeof window !== 'undefined' && this.teacherPollTimer !== null) {
+      window.clearInterval(this.teacherPollTimer);
+      this.teacherPollTimer = null;
     }
   }
 
@@ -515,7 +883,7 @@ class ApiService {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           parsed.forEach((st: UserProfile) => {
-            if (st && st.id && !deleted.has(st.id)) {
+            if (st && st.id && !deleted.has(st.id) && !isLegacyDemoStudentId(st.id)) {
               const existing = map.get(st.id);
               map.set(st.id, {
                 ...(existing || {}),
@@ -532,9 +900,23 @@ class ApiService {
       console.error('Error reading students from localStorage:', e);
     }
 
+    // Overlay synced students from backend Server
+    this.serverStudents.forEach((st) => {
+      if (st && st.id && !deleted.has(st.id) && !isLegacyDemoStudentId(st.id)) {
+        const existing = map.get(st.id);
+        map.set(st.id, {
+          ...(existing || {}),
+          ...st,
+          studentType:
+            st.studentType ||
+            (normalizeSchoolKey(st.school) === OFFICIAL_SCHOOL_KEY ? 'official' : 'extended'),
+        });
+      }
+    });
+
     // Overlay synced cloud students from Firestore
     this.cloudStudents.forEach((st) => {
-      if (st && st.id && !deleted.has(st.id)) {
+      if (st && st.id && !deleted.has(st.id) && !isLegacyDemoStudentId(st.id)) {
         const existing = map.get(st.id);
         map.set(st.id, {
           ...(existing || {}),
@@ -618,15 +1000,15 @@ class ApiService {
 
   private getLocalAttempts(): ExamRecord[] {
     const byId = new Map<string, ExamRecord>();
-    let hasStored = false;
     try {
       const raw = safeGetItem(EXAM_RECORDS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          hasStored = true;
           parsed.forEach((r: ExamRecord) => {
-            if (r && r.id) byId.set(r.id, r);
+            if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
+              byId.set(r.id, r);
+            }
           });
         }
       }
@@ -634,13 +1016,18 @@ class ApiService {
       console.error(e);
     }
 
-    if (!hasStored && this.cloudAttempts.length === 0) {
-      INITIAL_EXAM_RECORDS.forEach((r) => byId.set(r.id, r));
-    }
+    // Server-captured attempts across all student devices
+    this.serverAttempts.forEach((r) => {
+      if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
+        byId.set(r.id, r);
+      }
+    });
 
     // Cloud Firestore attempts take precedence and stay live across all devices
     this.cloudAttempts.forEach((r) => {
-      if (r && r.id) byId.set(r.id, r);
+      if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
+        byId.set(r.id, r);
+      }
     });
 
     return Array.from(byId.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -1437,27 +1824,34 @@ class ApiService {
     this.upsertStudentLocal(studentProfile);
     this.ensureClassExistsLocal(normalizedRecord.className, normalizedRecord.schoolName);
 
-    let cloudSynced = false;
-    try {
-      if (!isCloudSyncEligibleUser(auth.currentUser)) {
-        const session = await ensureAnonymousStudentSession();
-        if (session.user) {
-          this.setCloudAuthContext(session.user);
+    let serverSynced = false;
+    let firebaseSynced = false;
+
+    const serverPromise = this.postAttemptToServer(normalizedRecord);
+    const firebasePromise = (async () => {
+      try {
+        if (!isCloudSyncEligibleUser(auth.currentUser)) {
+          const session = await ensureAnonymousStudentSession();
+          if (session.user) {
+            this.setCloudAuthContext(session.user);
+          }
         }
-      }
-      if (isCloudSyncEligibleUser(auth.currentUser)) {
-        const res = await syncAttemptToCloud(normalizedRecord, studentProfile);
-        cloudSynced = res.synced;
-        if (cloudSynced) {
-          this.removePendingAttempt(normalizedRecord.id);
-        } else {
-          this.addPendingAttempt(normalizedRecord);
+        if (isCloudSyncEligibleUser(auth.currentUser)) {
+          const res = await syncAttemptToCloud(normalizedRecord, studentProfile);
+          return res.synced;
         }
-      } else {
-        this.addPendingAttempt(normalizedRecord);
+      } catch (e) {
+        console.warn('Firestore attempt sync warning:', e);
       }
-    } catch (e) {
-      console.warn('Cloud sync failed, queued in pending attempts:', e);
+      return false;
+    })();
+
+    [serverSynced, firebaseSynced] = await Promise.all([serverPromise, firebasePromise]);
+    const cloudSynced = serverSynced || firebaseSynced;
+
+    if (cloudSynced) {
+      this.removePendingAttempt(normalizedRecord.id);
+    } else {
       this.addPendingAttempt(normalizedRecord);
     }
 
@@ -1529,12 +1923,22 @@ class ApiService {
 
   deleteExamRecord(recordId: string): ExamRecord[] {
     this.cloudAttempts = this.cloudAttempts.filter((r) => r.id !== recordId);
+    this.serverAttempts = this.serverAttempts.filter((r) => r.id !== recordId);
     const updated = this.getLocalAttempts().filter((r) => r.id !== recordId);
     this.saveLocalAttemptsList(updated);
     if (isTeacherFirebaseUser(auth.currentUser)) {
       deleteAttemptFromCloud(recordId).catch((e) =>
         console.warn('Cloud delete attempt warning:', e)
       );
+      this.getTeacherAuthHeaders()
+        .then((headers) => {
+          if (!headers) return;
+          return fetch(`/api/attempts/${encodeURIComponent(recordId)}`, {
+            method: 'DELETE',
+            headers,
+          });
+        })
+        .catch(() => {});
     }
     this.emitDataChanged();
     return updated;
@@ -1565,30 +1969,37 @@ class ApiService {
   async flushPendingAttempts(user?: UserProfile): Promise<{ synced: number; failed: number }> {
     const pending = this.getPendingAttempts();
     if (pending.length === 0) return { synced: 0, failed: 0 };
+
     if (!isCloudSyncEligibleUser(auth.currentUser)) {
       const session = await ensureAnonymousStudentSession();
       if (session.user) {
         this.setCloudAuthContext(session.user);
       }
     }
-    if (!isCloudSyncEligibleUser(auth.currentUser)) {
-      return { synced: 0, failed: pending.length };
-    }
+    const firebaseReady = isCloudSyncEligibleUser(auth.currentUser);
 
     let synced = 0;
     let failed = 0;
     const stillPending: ExamRecord[] = [];
     for (const item of pending) {
+      let itemServerOk = false;
+      let itemFirebaseOk = false;
       try {
-        const res = await syncAttemptToCloud(item, user);
-        if (res.synced) {
-          synced++;
-        } else {
-          failed++;
-          stillPending.push(item);
+        itemServerOk = await this.postAttemptToServer(item);
+      } catch {
+        // ignore
+      }
+      if (firebaseReady) {
+        try {
+          const res = await syncAttemptToCloud(item, user);
+          itemFirebaseOk = res.synced;
+        } catch (e) {
+          console.warn('Pending attempt Firestore sync warning:', e);
         }
-      } catch (e) {
-        console.warn('Pending attempt sync failed:', e);
+      }
+      if (itemServerOk || itemFirebaseOk) {
+        synced++;
+      } else {
         failed++;
         stillPending.push(item);
       }
@@ -1596,6 +2007,65 @@ class ApiService {
     safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(stillPending));
     if (synced > 0) this.emitDataChanged();
     return { synced, failed };
+  }
+
+  async syncStudentDeviceHistoryToServer(user?: UserProfile | null): Promise<void> {
+    if (!user || user.role !== 'student') return;
+    if (!isCloudSyncEligibleUser(auth.currentUser)) {
+      const session = await ensureAnonymousStudentSession().catch(() => ({ user: null }));
+      if (session.user) {
+        this.setCloudAuthContext(session.user);
+      }
+    }
+    const firebaseReady = isCloudSyncEligibleUser(auth.currentUser);
+    try {
+      const serverProfileOk = await this.postProfileToServer(user).catch(() => false);
+      if (!serverProfileOk && firebaseReady) {
+        await syncStudentProfileToCloud(user).catch(() => false);
+      }
+    } catch {
+      // non-blocking
+    }
+    try {
+      await this.flushPendingAttempts(user);
+    } catch {
+      // non-blocking
+    }
+    try {
+      await this.flushPendingActivities();
+    } catch {
+      // non-blocking
+    }
+    // Also rescue any older real attempts/activities stored only in that student's localStorage before cloud/server sync was restored
+    try {
+      const knownCloudAttemptIds = new Set(
+        this.cloudAttempts.map((r) => sanitizeFirestoreId(r.id, 'att'))
+      );
+      const localAttempts = this.getLocalAttempts()
+        .filter((r) => r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId))
+        .slice(0, 40);
+      for (const att of localAttempts) {
+        const serverOk = await this.postAttemptToServer(att).catch(() => false);
+        if (!serverOk && firebaseReady && !knownCloudAttemptIds.has(sanitizeFirestoreId(att.id, 'att'))) {
+          await syncAttemptToCloud(att, user).catch(() => {});
+        }
+      }
+
+      const knownCloudActivityIds = new Set(
+        this.cloudActivities.map((a) => sanitizeFirestoreId(a.id, 'act'))
+      );
+      const localActs = this.getLocalActivitiesList()
+        .filter((a) => a && a.id)
+        .slice(0, 40);
+      for (const act of localActs) {
+        const serverOk = await this.postActivityToServer(act).catch(() => false);
+        if (!serverOk && firebaseReady && !knownCloudActivityIds.has(sanitizeFirestoreId(act.id, 'act'))) {
+          await syncActivityToCloud(act).catch(() => {});
+        }
+      }
+    } catch {
+      // non-blocking
+    }
   }
 
   // =========================================================================
@@ -1709,23 +2179,35 @@ class ApiService {
     this.savePendingActivities(pending);
     this.emitDataChanged();
 
-    // Silent automatic cloud sync (no Gmail popup needed)
+    // Silent automatic dual-sync: always push to Express backend AND Firestore (if eligible)
     if (this.syncingActivityIds.has(activity.id)) return false;
     this.syncingActivityIds.add(activity.id);
     try {
-      if (!isCloudSyncEligibleUser(auth.currentUser)) {
-        const session = await ensureAnonymousStudentSession();
-        if (session.user) {
-          this.setCloudAuthContext(session.user);
+      const serverPromise = this.postActivityToServer(activity);
+      const firebasePromise = (async () => {
+        try {
+          if (!isCloudSyncEligibleUser(auth.currentUser)) {
+            const session = await ensureAnonymousStudentSession();
+            if (session.user) {
+              this.setCloudAuthContext(session.user);
+            }
+          }
+          if (isCloudSyncEligibleUser(auth.currentUser)) {
+            const res = await syncActivityToCloud(activity);
+            return res.synced;
+          }
+        } catch {
+          // ignore Firestore warning if server succeeds
         }
-      }
-      if (isCloudSyncEligibleUser(auth.currentUser)) {
-        const res = await syncActivityToCloud(activity);
-        if (res.synced) {
-          const remaining = this.getPendingActivities().filter((a) => a.id !== activity.id);
-          this.savePendingActivities(remaining);
-          return true;
-        }
+        return false;
+      })();
+
+      const [serverOk, firebaseOk] = await Promise.all([serverPromise, firebasePromise]);
+      if (serverOk || firebaseOk) {
+        const remaining = this.getPendingActivities().filter((a) => a.id !== activity.id);
+        this.savePendingActivities(remaining);
+        this.emitDataChanged();
+        return true;
       }
     } catch (e) {
       console.warn('Learning activity queued for retry:', e);
@@ -1745,9 +2227,7 @@ class ApiService {
         this.setCloudAuthContext(session.user);
       }
     }
-    if (!isCloudSyncEligibleUser(auth.currentUser)) {
-      return { synced: 0, failed: pending.length };
-    }
+    const firebaseReady = isCloudSyncEligibleUser(auth.currentUser);
 
     let synced = 0;
     let failed = 0;
@@ -1759,8 +2239,17 @@ class ApiService {
       }
       this.syncingActivityIds.add(item.id);
       try {
-        const res = await syncActivityToCloud(item);
-        if (res.synced) {
+        const serverOk = await this.postActivityToServer(item);
+        let firebaseOk = false;
+        if (firebaseReady) {
+          try {
+            const res = await syncActivityToCloud(item);
+            firebaseOk = res.synced;
+          } catch {
+            // ignore
+          }
+        }
+        if (serverOk || firebaseOk) {
           synced++;
         } else {
           failed++;
@@ -1789,6 +2278,9 @@ class ApiService {
       if (a && a.id) map.set(a.id, a);
     });
     this.getPendingActivities().forEach((a) => {
+      if (a && a.id) map.set(a.id, a);
+    });
+    this.serverActivities.forEach((a) => {
       if (a && a.id) map.set(a.id, a);
     });
     this.cloudActivities.forEach((a) => {
@@ -2040,7 +2532,8 @@ class ApiService {
       lastLoginAt: new Date().toISOString(),
     });
 
-    // Silently initialize background Firebase student session (no Gmail popup needed)
+    // Silently sync active student session to server & Firebase
+    this.postProfileToServer(updatedUser).catch(() => {});
     ensureAnonymousStudentSession()
       .then((res) => {
         if (res.user) {
@@ -2086,6 +2579,7 @@ class ApiService {
         lastLoginAt: new Date().toISOString(),
       });
       this.ensureClassExistsLocal(normClass, normSchool);
+      this.postProfileToServer(updated).catch(() => {});
       return { success: true, user: updated };
     }
 
@@ -2109,7 +2603,8 @@ class ApiService {
     const saved = this.upsertStudentLocal(newStudent);
     this.ensureClassExistsLocal(normClass, normSchool);
 
-    // Silently initialize background Firebase student session (no Gmail popup needed)
+    // Silently register profile on Server + background Firebase session (no Gmail popup needed)
+    this.postProfileToServer(saved).catch(() => {});
     ensureAnonymousStudentSession()
       .then((res) => {
         if (res.user) {
