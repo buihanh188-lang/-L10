@@ -182,6 +182,7 @@ function AppContent() {
     const handleResumeSync = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      if (apiService.isQuotaCooldownActive()) return;
       const activeUser = StorageService.getCurrentUser();
       if (activeUser?.role === 'student') {
         if (apiService.hasPendingStudentSyncData()) {

@@ -573,6 +573,21 @@ export interface CloudActivityWriteResult {
   errorMessage?: string;
 }
 
+export function isFirestoreQuotaError(error: unknown): boolean {
+  if (!error) return false;
+  const code = String((error as any)?.code || '').toLowerCase();
+  const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return (
+    code.includes('resource-exhausted') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('resource exhausted') ||
+    msg.includes('quota') ||
+    msg.includes('free daily read units')
+  );
+}
+
+const pendingProfileOpByUid = new Map<string, Promise<boolean>>();
+
 async function ensureStudentProfileDocExists(
   uid: string,
   profile: Partial<UserProfile>,
@@ -581,16 +596,43 @@ async function ensureStudentProfileDocExists(
   if (!forceCheck && readCachedProfileUids().has(uid)) {
     return true;
   }
-  const studentRef = doc(db, 'students', uid);
-  const snap = await getDoc(studentRef);
-  if (snap.exists()) {
-    markCachedProfileUid(uid);
-    return true;
+  const existingOp = pendingProfileOpByUid.get(uid);
+  if (existingOp) {
+    return existingOp;
   }
-  const createData = buildStudentProfileCreatePayload(uid, profile);
-  await setDoc(studentRef, createData);
-  markCachedProfileUid(uid);
-  return true;
+  const op = (async () => {
+    const studentRef = doc(db, 'students', uid);
+    const createData = buildStudentProfileCreatePayload(uid, profile);
+    try {
+      // Create-first: costs 0 Firestore reads for brand-new students, so they can submit even if read quota is exhausted.
+      await setDoc(studentRef, createData);
+      markCachedProfileUid(uid);
+      return true;
+    } catch (err: any) {
+      if (isFirestoreQuotaError(err)) {
+        throw err;
+      }
+      const code = String(err?.code || '').toLowerCase();
+      if (code.includes('permission-denied')) {
+        // Likely students/{uid} already existed on Firestore (update rejected createdAt overwrite):
+        // verify existence once via getDoc on non-quota failures.
+        const snap = await getDoc(studentRef);
+        if (snap.exists()) {
+          markCachedProfileUid(uid);
+          return true;
+        }
+      }
+      throw err;
+    }
+  })();
+  pendingProfileOpByUid.set(uid, op);
+  try {
+    return await op;
+  } finally {
+    if (pendingProfileOpByUid.get(uid) === op) {
+      pendingProfileOpByUid.delete(uid);
+    }
+  }
 }
 
 // =========================================================================
@@ -598,7 +640,8 @@ async function ensureStudentProfileDocExists(
 // =========================================================================
 export async function syncStudentProfileToCloud(
   profile: Partial<UserProfile>,
-  force = false
+  force = false,
+  onQuotaError?: (errorMessage: string) => void
 ): Promise<boolean> {
   const user = auth.currentUser;
   if (!isCloudSyncEligibleUser(user)) return false;
@@ -626,34 +669,76 @@ export async function syncStudentProfileToCloud(
     }
   }
 
+  const inflight = pendingProfileOpByUid.get(uid);
+  if (inflight) {
+    return inflight;
+  }
+
   const studentPath = `students/${uid}`;
   const ref = doc(db, 'students', uid);
 
+  const op = (async () => {
+    try {
+      if (readCachedProfileUids().has(uid)) {
+        try {
+          await updateDoc(ref, buildStudentProfileUpdatePayload(profile));
+        } catch (updErr: any) {
+          if (isFirestoreQuotaError(updErr)) throw updErr;
+          const updCode = String(updErr?.code || '').toLowerCase();
+          if (updCode.includes('not-found')) {
+            clearCachedProfileUid(uid);
+            await setDoc(ref, buildStudentProfileCreatePayload(uid, profile));
+          } else {
+            throw updErr;
+          }
+        }
+      } else {
+        try {
+          // Create-first with 0 reads so brand-new students succeed even if read quota is exhausted.
+          await setDoc(ref, buildStudentProfileCreatePayload(uid, profile));
+        } catch (createErr: any) {
+          if (isFirestoreQuotaError(createErr)) throw createErr;
+          const createCode = String(createErr?.code || '').toLowerCase();
+          if (createCode.includes('permission-denied')) {
+            const snap = await getDoc(ref);
+            if (!snap.exists()) {
+              throw createErr;
+            }
+            const existingData = snap.data();
+            if (existingData && existingData.ownerUid === uid && existingData.createdAt) {
+              await updateDoc(ref, buildStudentProfileUpdatePayload(profile));
+            }
+          } else {
+            throw createErr;
+          }
+        }
+      }
+
+      markCachedProfileUid(uid);
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(SYNCED_PROFILE_SIG_KEY, JSON.stringify({ sig, ts: Date.now() }));
+        } catch {
+          // ignore
+        }
+      }
+      return true;
+    } catch (error) {
+      const info = logFirestoreError(error, OperationType.WRITE, studentPath);
+      if (isFirestoreQuotaError(error) && onQuotaError) {
+        onQuotaError(info.error);
+      }
+      return false;
+    }
+  })();
+
+  pendingProfileOpByUid.set(uid, op);
   try {
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      const createData = buildStudentProfileCreatePayload(uid, profile);
-      await setDoc(ref, createData);
-    } else {
-      const existingData = snap.data();
-      // Only attempt profile update if existing doc conforms to immutable ownerUid & createdAt rules
-      if (existingData && existingData.ownerUid === uid && existingData.createdAt) {
-        const updateData = buildStudentProfileUpdatePayload(profile);
-        await updateDoc(ref, updateData);
-      }
+    return await op;
+  } finally {
+    if (pendingProfileOpByUid.get(uid) === op) {
+      pendingProfileOpByUid.delete(uid);
     }
-    markCachedProfileUid(uid);
-    if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(SYNCED_PROFILE_SIG_KEY, JSON.stringify({ sig, ts: Date.now() }));
-      } catch {
-        // ignore
-      }
-    }
-    return true;
-  } catch (error) {
-    logFirestoreError(error, OperationType.WRITE, studentPath);
-    return false;
   }
 }
 
@@ -683,19 +768,22 @@ export async function syncAttemptToCloud(
       await setDoc(attemptRef, payload);
       return { synced: true, attemptId: safeAttemptId, profileVerified: true };
     } catch (error: any) {
-      try {
-        const existingAttempt = await getDoc(attemptRef);
-        if (existingAttempt.exists()) {
-          return { synced: true, attemptId: safeAttemptId, alreadyExists: true, profileVerified: true };
+      const isQuotaErr = isFirestoreQuotaError(error);
+      if (!isQuotaErr) {
+        try {
+          const existingAttempt = await getDoc(attemptRef);
+          if (existingAttempt.exists()) {
+            return { synced: true, attemptId: safeAttemptId, alreadyExists: true, profileVerified: true };
+          }
+        } catch {
+          // ignore secondary check failure
         }
-      } catch {
-        // ignore secondary check failure
       }
       const info = logFirestoreError(error, OperationType.CREATE, attemptPath);
       return {
         synced: false,
         attemptId: safeAttemptId,
-        errorCode: String(error?.code || 'firestore/write-failed'),
+        errorCode: isQuotaErr ? 'resource-exhausted' : String(error?.code || 'firestore/write-failed'),
         errorMessage: info.error,
       };
     }
@@ -714,7 +802,7 @@ export async function syncAttemptToCloud(
 
   let profileVerified = false;
   try {
-    // 1. Ensure students/{uid} exists (0 Firestore reads if already cached on this browser)
+    // 1. Ensure students/{uid} exists (0 Firestore reads for both cached returning and brand-new students)
     const wasCached = readCachedProfileUids().has(uid);
     profileVerified = await ensureStudentProfileDocExists(uid, studentProfileSeed, false);
 
@@ -723,6 +811,9 @@ export async function syncAttemptToCloud(
       await setDoc(attemptRef, payload);
       return { synced: true, attemptId: safeAttemptId, profileVerified: true };
     } catch (writeErr: any) {
+      if (isFirestoreQuotaError(writeErr)) {
+        throw writeErr;
+      }
       const writeCode = String(writeErr?.code || '');
       // If cached UID flag was stale, re-ensure students/{uid} once and retry setDoc
       if (writeCode === 'permission-denied' && wasCached) {
@@ -735,11 +826,7 @@ export async function syncAttemptToCloud(
     }
   } catch (error: any) {
     const rawCode = String(error?.code || '');
-    const rawMsg = String(error?.message || '');
-    const isQuotaErr =
-      rawCode === 'resource-exhausted' ||
-      rawMsg.toLowerCase().includes('quota') ||
-      rawMsg.toLowerCase().includes('resource-exhausted');
+    const isQuotaErr = isFirestoreQuotaError(error);
 
     // Idempotency check ONLY on non-quota failures: if attempt already landed on Firestore under this UID, mark synced without overwriting
     if (!isQuotaErr) {
@@ -754,7 +841,7 @@ export async function syncAttemptToCloud(
     }
 
     const info = logFirestoreError(error, OperationType.CREATE, attemptPath);
-    const errorCode = rawCode || 'firestore/write-failed';
+    const errorCode = isQuotaErr ? 'resource-exhausted' : (rawCode || 'firestore/write-failed');
     return {
       synced: false,
       attemptId: safeAttemptId,
@@ -811,19 +898,22 @@ export async function syncActivityToCloud(
     await setDoc(activityRef, payload);
     return { synced: true, activityId: safeActivityId };
   } catch (error: any) {
-    try {
-      const existing = await getDoc(activityRef);
-      if (existing.exists()) {
-        return { synced: true, activityId: safeActivityId, alreadyExists: true };
+    const isQuotaErr = isFirestoreQuotaError(error);
+    if (!isQuotaErr) {
+      try {
+        const existing = await getDoc(activityRef);
+        if (existing.exists()) {
+          return { synced: true, activityId: safeActivityId, alreadyExists: true };
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
     const info = logFirestoreError(error, OperationType.CREATE, activityPath);
     return {
       synced: false,
       activityId: safeActivityId,
-      errorCode: String(error?.code || 'firestore/write-failed'),
+      errorCode: isQuotaErr ? 'resource-exhausted' : String(error?.code || 'firestore/write-failed'),
       errorMessage: info.error,
     };
   }

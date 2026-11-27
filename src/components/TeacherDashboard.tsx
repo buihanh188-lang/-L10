@@ -165,9 +165,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setDataVersion((v) => v + 1);
   };
 
-  // Filter states for analytics
+  // Filter & pagination states for analytics
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [studentSearch, setStudentSearch] = useState<string>('');
+  const [gradebookPage, setGradebookPage] = useState<number>(1);
+  const [attemptsPage, setAttemptsPage] = useState<number>(1);
+  const ANALYTICS_PAGE_SIZE = 20;
 
   // Questions management states
   const [qFilterTopic, setQFilterTopic] = useState<string>('all');
@@ -468,6 +471,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     return true;
   });
 
+  const filteredDetailAttempts = filteredRecords.filter((r) => {
+    if (!studentSearch.trim()) return true;
+    const q = studentSearch.toLowerCase();
+    return (
+      (r.studentName || '').toLowerCase().includes(q) ||
+      (r.studentCode || '').toLowerCase().includes(q) ||
+      (r.schoolName || '').toLowerCase().includes(q) ||
+      (r.className || '').toLowerCase().includes(q) ||
+      (r.title || '').toLowerCase().includes(q)
+    );
+  });
+
+  const totalGradebookPages = Math.max(1, Math.ceil(studentTableRows.length / ANALYTICS_PAGE_SIZE));
+  const safeGradebookPage = Math.min(gradebookPage, totalGradebookPages);
+  const pagedStudentRows = studentTableRows.slice(
+    (safeGradebookPage - 1) * ANALYTICS_PAGE_SIZE,
+    safeGradebookPage * ANALYTICS_PAGE_SIZE
+  );
+
+  const totalAttemptsPages = Math.max(
+    1,
+    Math.ceil(filteredDetailAttempts.length / ANALYTICS_PAGE_SIZE)
+  );
+  const safeAttemptsPage = Math.min(attemptsPage, totalAttemptsPages);
+  const pagedAttemptRows = filteredDetailAttempts.slice(
+    (safeAttemptsPage - 1) * ANALYTICS_PAGE_SIZE,
+    safeAttemptsPage * ANALYTICS_PAGE_SIZE
+  );
+
+  const formatDurationLabel = (secs: number) => {
+    const s = Math.max(0, Math.round(Number(secs) || 0));
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return m > 0 ? `${m}p ${rem}s` : `${rem}s`;
+  };
+
   // Export CSV
   const handleExportCSV = () => {
     const csvContent = StorageService.exportRecordsToCSV(filteredRecords, language);
@@ -484,6 +523,69 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Export Excel (.xlsx) with Student Summary + Per-Attempt Details
+  const handleExportExcel = async () => {
+    const XLSX = await import('xlsx');
+    const summaryRows = studentTableRows.map((s, idx) => {
+      const avg =
+        s.scores.length > 0
+          ? Math.round((s.scores.reduce((a, b) => a + b, 0) / s.scores.length) * 10) / 10
+          : 0;
+      const max =
+        s.highestScore !== null
+          ? s.highestScore
+          : s.scores.length > 0
+          ? Math.max(...s.scores)
+          : '';
+      return {
+        STT: idx + 1,
+        'Mã HS': s.code,
+        'Họ và Tên': s.name,
+        'Trường THPT': s.school,
+        Lớp: s.className,
+        'Số lượt làm': s.attempts,
+        'Điểm gần nhất': s.recentScore ?? '',
+        'Điểm cao nhất': max,
+        'Điểm TB': s.scores.length > 0 ? avg : '',
+        'Đã đồng bộ Firebase': s.syncedAttempts,
+      };
+    });
+
+    const attemptRows = filteredDetailAttempts.map((r, idx) => ({
+      STT: idx + 1,
+      'Mã HS': r.studentCode,
+      'Họ và Tên': r.studentName,
+      'Trường THPT': r.schoolName,
+      Lớp: r.className,
+      'Nội dung / Đề': localizeExamTitle(r.title, language),
+      Điểm: r.score,
+      'Số câu đúng': r.correctCount,
+      'Số câu sai': r.wrongCount,
+      'Tổng số câu': r.totalQuestions,
+      'Thời gian làm': formatDurationLabel(r.durationSeconds),
+      'Thời điểm nộp': formatVNDateTime(r.timestamp, language),
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(summaryRows),
+      isEn ? 'StudentGradebook' : 'BangDiemHocSinh'
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(attemptRows),
+      isEn ? 'AttemptDetails' : 'ChiTietBaiLam'
+    );
+    XLSX.writeFile(
+      wb,
+      isEn
+        ? `Geography10_Results_${selectedClass}.xlsx`
+        : `Ket_Qua_Dia_Li_10_${selectedClass}.xlsx`
+    );
   };
 
   // Export Questions JSON
@@ -1137,7 +1239,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </span>
               <div className="inline-flex space-x-1">
                 <button
-                  onClick={() => setSelectedClass('all')}
+                  onClick={() => {
+                    setSelectedClass('all');
+                    setGradebookPage(1);
+                    setAttemptsPage(1);
+                  }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     selectedClass === 'all'
                       ? 'bg-blue-600 text-white'
@@ -1149,7 +1255,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 {allClasses.map((cls) => (
                   <button
                     key={cls.id}
-                    onClick={() => setSelectedClass(cls.name)}
+                    onClick={() => {
+                      setSelectedClass(cls.name);
+                      setGradebookPage(1);
+                      setAttemptsPage(1);
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                       selectedClass === cls.name
                         ? 'bg-blue-600 text-white'
@@ -1434,7 +1544,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
                   <input
@@ -1443,15 +1553,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       isEn ? 'Search student code or name...' : 'Tìm mã hoặc tên học sinh...'
                     }
                     value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
+                    onChange={(e) => {
+                      setStudentSearch(e.target.value);
+                      setGradebookPage(1);
+                      setAttemptsPage(1);
+                    }}
                     className="pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <button
-                  onClick={handleExportCSV}
-                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 transition-colors flex items-center space-x-1"
+                  onClick={handleExportExcel}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center space-x-1 cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>{isEn ? 'Export Excel (.xlsx)' : 'Xuất Excel (.xlsx)'}</span>
+                </button>
+                <button
+                  onClick={handleExportCSV}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 transition-colors flex items-center space-x-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
                   <span>{isEn ? 'Export CSV' : 'Xuất CSV'}</span>
                 </button>
               </div>
@@ -1474,7 +1595,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {studentTableRows.length === 0 ? (
+                  {pagedStudentRows.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="p-6 text-center text-slate-400">
                         {isEn
@@ -1483,7 +1604,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    studentTableRows.map((s, idx) => {
+                    pagedStudentRows.map((s, idx) => {
+                      const rowNum = (safeGradebookPage - 1) * ANALYTICS_PAGE_SIZE + idx + 1;
                       const avg =
                         s.scores.length > 0
                           ? Math.round(
@@ -1518,7 +1640,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                       return (
                         <tr key={s.key} className="hover:bg-slate-50/60">
-                          <td className="p-3 text-center font-bold text-slate-500">{idx + 1}</td>
+                          <td className="p-3 text-center font-bold text-slate-500">{rowNum}</td>
                           <td className="p-3 font-mono font-semibold text-blue-700">{s.code}</td>
                           <td className="p-3 font-bold text-slate-900">{s.name}</td>
                           <td
@@ -1566,32 +1688,159 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </tbody>
               </table>
             </div>
-            {cloudStatus.connected && cloudStatus.isTeacher && cloudStatus.hasMoreAttempts && (
-              <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
-                <span className="text-slate-500">
+            {studentTableRows.length > ANALYTICS_PAGE_SIZE && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-slate-600">
+                <span>
                   {isEn
-                    ? `Currently displaying ${cloudStatus.cloudAttemptCount} most recent synced attempts.`
-                    : `Đang hiển thị ${cloudStatus.cloudAttemptCount} bài làm gần nhất để tiết kiệm hạn mức đọc Firebase Spark.`}
+                    ? `Page ${safeGradebookPage}/${totalGradebookPages} (${studentTableRows.length} students)`
+                    : `Trang ${safeGradebookPage}/${totalGradebookPages} (tổng ${studentTableRows.length} học sinh)`}
                 </span>
-                <button
-                  type="button"
-                  disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
-                  onClick={handleLoadOlderAttempts}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold cursor-pointer disabled:opacity-50"
-                >
-                  <History className="w-3.5 h-3.5" />
-                  <span>
-                    {cloudStatus.loadingOlderAttempts
-                      ? isEn
-                        ? 'Loading older attempts...'
-                        : 'Đang tải bài làm cũ hơn...'
-                      : isEn
-                        ? 'Load Older Attempts'
-                        : 'Tải thêm bài làm cũ hơn'}
-                  </span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={safeGradebookPage <= 1}
+                    onClick={() => setGradebookPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold disabled:opacity-40 cursor-pointer"
+                  >
+                    {isEn ? 'Prev' : 'Trước'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safeGradebookPage >= totalGradebookPages}
+                    onClick={() => setGradebookPage((p) => Math.min(totalGradebookPages, p + 1))}
+                    className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold disabled:opacity-40 cursor-pointer"
+                  >
+                    {isEn ? 'Next' : 'Sau'}
+                  </button>
+                </div>
               </div>
             )}
+
+            {/* Per-Attempt Submission Details Log (Score, Correct/Wrong, Time, Student, Class, School) */}
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">
+                    {isEn
+                      ? 'Detailed Submission Results (Score, Correct/Wrong, Duration)'
+                      : 'Nhật Ký Kết Quả Từng Lượt Làm Bài (Điểm, Đúng/Sai, Thời Gian)'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    {isEn
+                      ? `Showing ${filteredDetailAttempts.length} synced & local attempts`
+                      : `Hiển thị ${filteredDetailAttempts.length} lượt bài làm đã đồng bộ & cục bộ`}
+                  </p>
+                </div>
+                {cloudStatus.connected && cloudStatus.isTeacher && cloudStatus.hasMoreAttempts && (
+                  <button
+                    type="button"
+                    disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                    onClick={handleLoadOlderAttempts}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold cursor-pointer disabled:opacity-50"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    <span>
+                      {cloudStatus.loadingOlderAttempts
+                        ? isEn
+                          ? 'Loading older attempts...'
+                          : 'Đang tải bài làm cũ hơn...'
+                        : isEn
+                          ? 'Load Older Attempts'
+                          : 'Tải thêm bài làm cũ hơn'}
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-800 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                    <tr>
+                      <th className="p-2.5 text-center">{isEn ? 'No.' : 'STT'}</th>
+                      <th className="p-2.5">{isEn ? 'Student' : 'Học sinh'}</th>
+                      <th className="p-2.5 text-center">{isEn ? 'Class' : 'Lớp'}</th>
+                      <th className="p-2.5">{isEn ? 'School' : 'Trường'}</th>
+                      <th className="p-2.5">{isEn ? 'Lesson / Exam' : 'Bài học / Đề'}</th>
+                      <th className="p-2.5 text-center">{isEn ? 'Score' : 'Điểm'}</th>
+                      <th className="p-2.5 text-center">{isEn ? 'Right / Wrong' : 'Đúng / Sai'}</th>
+                      <th className="p-2.5 text-center">{isEn ? 'Duration' : 'Thời gian làm'}</th>
+                      <th className="p-2.5">{isEn ? 'Submitted At' : 'Thời điểm nộp'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {pagedAttemptRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-5 text-center text-slate-400">
+                          {isEn ? 'No submissions recorded yet.' : 'Chưa có lượt nộp bài nào.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      pagedAttemptRows.map((rec, idx) => (
+                        <tr key={rec.id} className="hover:bg-slate-50/60">
+                          <td className="p-2.5 text-center font-bold text-slate-500">
+                            {(safeAttemptsPage - 1) * ANALYTICS_PAGE_SIZE + idx + 1}
+                          </td>
+                          <td className="p-2.5">
+                            <div className="font-bold text-slate-900">{rec.studentName}</div>
+                            <div className="text-[10px] font-mono text-blue-700">{rec.studentCode}</div>
+                          </td>
+                          <td className="p-2.5 text-center font-bold">{rec.className}</td>
+                          <td className="p-2.5 max-w-[150px] truncate" title={rec.schoolName}>
+                            {rec.schoolName}
+                          </td>
+                          <td className="p-2.5 max-w-[180px] truncate" title={localizeExamTitle(rec.title, language)}>
+                            {localizeExamTitle(rec.title, language)}
+                          </td>
+                          <td className="p-2.5 text-center font-black text-blue-700">
+                            {rec.score} {isEn ? 'pts' : 'đ'}
+                          </td>
+                          <td className="p-2.5 text-center whitespace-nowrap">
+                            <span className="font-bold text-emerald-700">{rec.correctCount}✓</span>
+                            {' / '}
+                            <span className="font-bold text-rose-600">{rec.wrongCount}✕</span>
+                            <span className="text-[10px] text-slate-400 ml-1">({rec.totalQuestions})</span>
+                          </td>
+                          <td className="p-2.5 text-center font-medium whitespace-nowrap">
+                            {formatDurationLabel(rec.durationSeconds)}
+                          </td>
+                          <td className="p-2.5 text-[11px] text-slate-500 whitespace-nowrap">
+                            {formatVNDateTime(rec.timestamp, language)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {filteredDetailAttempts.length > ANALYTICS_PAGE_SIZE && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                  <span>
+                    {isEn
+                      ? `Page ${safeAttemptsPage}/${totalAttemptsPages} (${filteredDetailAttempts.length} attempts)`
+                      : `Trang ${safeAttemptsPage}/${totalAttemptsPages} (tổng ${filteredDetailAttempts.length} lượt làm)`}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={safeAttemptsPage <= 1}
+                      onClick={() => setAttemptsPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold disabled:opacity-40 cursor-pointer"
+                    >
+                      {isEn ? 'Prev' : 'Trước'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safeAttemptsPage >= totalAttemptsPages}
+                      onClick={() => setAttemptsPage((p) => Math.min(totalAttemptsPages, p + 1))}
+                      className="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 font-semibold disabled:opacity-40 cursor-pointer"
+                    >
+                      {isEn ? 'Next' : 'Sau'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

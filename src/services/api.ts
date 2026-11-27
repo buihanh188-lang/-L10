@@ -50,6 +50,7 @@ import {
   fetchOlderAttemptsPage,
   getCurrentFirebaseIdToken,
   isCloudSyncEligibleUser,
+  isFirestoreQuotaError,
   isTeacherFirebaseUser,
   isVerifiedFirebaseUser,
   mirrorRecordsToFirestoreAsTeacher,
@@ -294,12 +295,7 @@ class ApiService {
   }
 
   private isQuotaError(msg?: string | null): boolean {
-    const s = String(msg || '').toLowerCase();
-    return (
-      s.includes('resource-exhausted') ||
-      s.includes('quota') ||
-      s.includes('free daily read units')
-    );
+    return isFirestoreQuotaError(msg);
   }
 
   private triggerQuotaCooldown(reason?: string): void {
@@ -337,6 +333,13 @@ class ApiService {
       return false;
     }
     return true;
+  }
+
+  private syncProfileIfQuotaAllows(profile: Partial<UserProfile>, force = false): Promise<boolean> {
+    if (this.isQuotaCooldownActive()) return Promise.resolve(false);
+    return syncStudentProfileToCloud(profile, force, (errMsg) => {
+      this.triggerQuotaCooldown(errMsg);
+    });
   }
 
   private loadConfirmedSyncedIds(): void {
@@ -1188,7 +1191,7 @@ class ApiService {
     if (session.user) {
       this.setCloudAuthContext(session.user);
       if (profile && profile.role === 'student') {
-        syncStudentProfileToCloud(profile).catch(() => false);
+        await this.syncProfileIfQuotaAllows(profile).catch(() => false);
       }
     } else if (session.errorMessage || session.errorCode) {
       this.setCloudSyncError(session.errorMessage || session.errorCode || 'Firebase auth error');
@@ -1258,13 +1261,20 @@ class ApiService {
           knownCloudActivityIds,
         }).catch(() => ({ mirroredAttempts: 0, mirroredActivities: 0 }));
         if (res.mirroredAttempts > 0 || res.mirroredActivities > 0) {
-          await fetchCloudDataOnce()
+          await fetchCloudDataOnce({
+            attemptsSinceCreatedMs: this.lastAttemptCreatedMs,
+            activitiesSinceCreatedMs: this.lastActivityCreatedMs,
+            includeStudents: false,
+          })
             .then((snap) => {
               if (snap) {
-                this.cloudAttempts = snap.attempts;
-                this.cloudStudents = snap.students;
-                this.cloudActivities = snap.activities;
-                this.emitDataChanged();
+                this.setCloudSyncData({
+                  attempts: snap.fetched.attempts ? snap.attempts : undefined,
+                  activities: snap.fetched.activities ? snap.activities : undefined,
+                  latestAttemptCreatedMs: snap.latestCreatedMs.attempts,
+                  latestActivityCreatedMs: snap.latestCreatedMs.activities,
+                  isDelta: true,
+                });
               }
             })
             .catch(() => {});
@@ -2026,8 +2036,11 @@ class ApiService {
     };
     this.setTeacherToken(token);
     this.hydrateAdminCache();
+    this.clearQuotaCooldown();
     this.setCloudAuthContext(fbUser);
-    await this.refreshCloudData({ force: true });
+    // onAuthStateChanged in App.tsx attaches subscribeCloudData for attempts/activities;
+    // only refresh students roster here to avoid duplicate 250-doc reads on Google login.
+    await this.refreshCloudData({ forceEmit: true, studentsOnly: true }).catch(() => false);
     return { success: true, token, user };
   }
 
@@ -2071,7 +2084,7 @@ class ApiService {
 
     if (profile && profile.role === 'student') {
       try {
-        await syncStudentProfileToCloud(profile);
+        await this.syncProfileIfQuotaAllows(profile);
       } catch (e) {
         console.warn('Could not sync student profile on Google connect:', e);
       }
@@ -3061,8 +3074,8 @@ class ApiService {
         return summary;
       }
 
-      // Sync student profile separately (cached with 12h TTL in firebase.ts — 0 reads on repeat visits)
-      syncStudentProfileToCloud(user).catch(() => false);
+      // Sync student profile (0 reads via create-first/cache; short-circuits immediately if quota-limited)
+      await this.syncProfileIfQuotaAllows(user).catch(() => false);
       if (this.isLocalExpressEnvironment()) {
         this.postProfileToServer(user).catch(() => false);
       }
@@ -3340,6 +3353,7 @@ class ApiService {
     }
 
     if (this.syncingActivityIds.has(activity.id)) return false;
+    if (this.isQuotaCooldownActive()) return false;
     this.syncingActivityIds.add(activity.id);
     try {
       if (!isCloudSyncEligibleUser(auth.currentUser)) {
@@ -3754,7 +3768,7 @@ class ApiService {
       .then((res) => {
         if (res.user) {
           this.setCloudAuthContext(res.user);
-          return syncStudentProfileToCloud(updatedUser);
+          return this.syncProfileIfQuotaAllows(updatedUser);
         }
       })
       .catch(() => {});
@@ -3802,7 +3816,7 @@ class ApiService {
         .then((res) => {
           if (res.user) {
             this.setCloudAuthContext(res.user);
-            return syncStudentProfileToCloud(updated);
+            return this.syncProfileIfQuotaAllows(updated);
           }
         })
         .catch(() => false);
@@ -3835,7 +3849,7 @@ class ApiService {
       .then((res) => {
         if (res.user) {
           this.setCloudAuthContext(res.user);
-          return syncStudentProfileToCloud(saved);
+          return this.syncProfileIfQuotaAllows(saved);
         }
       })
       .catch(() => {});
