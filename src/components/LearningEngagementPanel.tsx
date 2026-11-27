@@ -520,7 +520,17 @@ export const LearningEngagementPanel: React.FC = () => {
   const handleRefreshCloud = async () => {
     setRefreshing(true);
     try {
-      await apiService.refreshCloudData();
+      await apiService.refreshCloudData({ force: true });
+      setVersion((v) => v + 1);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleLoadOlderActivities = async () => {
+    setRefreshing(true);
+    try {
+      await apiService.loadOlderActivitiesPage();
       setVersion((v) => v + 1);
     } finally {
       setRefreshing(false);
@@ -676,6 +686,25 @@ export const LearningEngagementPanel: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {apiService.getCloudSyncStatus().hasMoreActivities && (
+              <button
+                type="button"
+                onClick={handleLoadOlderActivities}
+                disabled={refreshing || apiService.getCloudSyncStatus().loadingOlderActivities}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>
+                  {apiService.getCloudSyncStatus().loadingOlderActivities
+                    ? isEn
+                      ? 'Loading older...'
+                      : 'Đang tải...'
+                    : isEn
+                      ? 'Load Older Activities'
+                      : 'Tải thêm hoạt động cũ hơn'}
+                </span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleRefreshCloud}

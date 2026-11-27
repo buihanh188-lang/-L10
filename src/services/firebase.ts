@@ -15,16 +15,18 @@ import {
   deleteDoc,
   doc,
   getDoc,
-  getDocFromServer,
   getDocs,
   getFirestore,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
+  startAfter,
+  Timestamp,
   updateDoc,
   where,
-  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -108,18 +110,58 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Startup connection validation per Firebase integration guidelines
-async function testConnection() {
+// Local browser cache for verified student profile UIDs & profile sync signatures
+// avoids redundant getDoc() reads on every attempt write (preserving Spark free read quota).
+const CLOUD_PROFILE_UIDS_KEY = 'dia_li_10_cloud_profile_uids';
+const SYNCED_PROFILE_SIG_KEY = 'dia_li_10_synced_profile_sig';
+const PROFILE_SIG_TTL_MS = 12 * 60 * 60 * 1000;
+const verifiedProfileUidSet = new Set<string>();
+
+function readCachedProfileUids(): Set<string> {
+  if (verifiedProfileUidSet.size > 0) return verifiedProfileUidSet;
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem(CLOUD_PROFILE_UIDS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((id) => {
+            if (typeof id === 'string' && id) verifiedProfileUidSet.add(id);
+          });
+        }
+      }
     }
+  } catch {
+    // ignore storage access issues
+  }
+  return verifiedProfileUidSet;
+}
+
+function markCachedProfileUid(uid: string): void {
+  if (!uid) return;
+  const set = readCachedProfileUids();
+  if (set.has(uid)) return;
+  set.add(uid);
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(CLOUD_PROFILE_UIDS_KEY, JSON.stringify(Array.from(set).slice(-30)));
+    }
+  } catch {
+    // ignore
   }
 }
-if (typeof window !== 'undefined') {
-  testConnection();
+
+function clearCachedProfileUid(uid: string): void {
+  if (!uid) return;
+  const set = readCachedProfileUids();
+  set.delete(uid);
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(CLOUD_PROFILE_UIDS_KEY, JSON.stringify(Array.from(set)));
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export function isVerifiedFirebaseUser(user: FirebaseUser | null | undefined): user is FirebaseUser {
@@ -518,6 +560,7 @@ export interface CloudSyncWriteResult {
   synced: boolean;
   attemptId: string;
   alreadyExists?: boolean;
+  profileVerified?: boolean;
   errorCode?: string;
   errorMessage?: string;
 }
@@ -532,26 +575,57 @@ export interface CloudActivityWriteResult {
 
 async function ensureStudentProfileDocExists(
   uid: string,
-  profile: Partial<UserProfile>
+  profile: Partial<UserProfile>,
+  forceCheck = false
 ): Promise<boolean> {
+  if (!forceCheck && readCachedProfileUids().has(uid)) {
+    return true;
+  }
   const studentRef = doc(db, 'students', uid);
   const snap = await getDoc(studentRef);
   if (snap.exists()) {
+    markCachedProfileUid(uid);
     return true;
   }
   const createData = buildStudentProfileCreatePayload(uid, profile);
   await setDoc(studentRef, createData);
+  markCachedProfileUid(uid);
   return true;
 }
 
 // =========================================================================
 // FIRESTORE CRUD & REAL-TIME SYNC OPERATIONS
 // =========================================================================
-export async function syncStudentProfileToCloud(profile: Partial<UserProfile>): Promise<boolean> {
+export async function syncStudentProfileToCloud(
+  profile: Partial<UserProfile>,
+  force = false
+): Promise<boolean> {
   const user = auth.currentUser;
   if (!isCloudSyncEligibleUser(user)) return false;
 
   const uid = user.uid;
+  const sig = `${uid}|${profile.name || ''}|${profile.code || ''}|${profile.className || ''}|${profile.school || ''}`;
+
+  if (!force && typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage.getItem(SYNCED_PROFILE_SIG_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed &&
+          parsed.sig === sig &&
+          typeof parsed.ts === 'number' &&
+          Date.now() - parsed.ts < PROFILE_SIG_TTL_MS
+        ) {
+          markCachedProfileUid(uid);
+          return true;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const studentPath = `students/${uid}`;
   const ref = doc(db, 'students', uid);
 
@@ -560,14 +634,21 @@ export async function syncStudentProfileToCloud(profile: Partial<UserProfile>): 
     if (!snap.exists()) {
       const createData = buildStudentProfileCreatePayload(uid, profile);
       await setDoc(ref, createData);
-      return true;
+    } else {
+      const existingData = snap.data();
+      // Only attempt profile update if existing doc conforms to immutable ownerUid & createdAt rules
+      if (existingData && existingData.ownerUid === uid && existingData.createdAt) {
+        const updateData = buildStudentProfileUpdatePayload(profile);
+        await updateDoc(ref, updateData);
+      }
     }
-
-    const existingData = snap.data();
-    // Only attempt profile update if existing doc conforms to immutable ownerUid & createdAt rules
-    if (existingData && existingData.ownerUid === uid && existingData.createdAt) {
-      const updateData = buildStudentProfileUpdatePayload(profile);
-      await updateDoc(ref, updateData);
+    markCachedProfileUid(uid);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(SYNCED_PROFILE_SIG_KEY, JSON.stringify({ sig, ts: Date.now() }));
+      } catch {
+        // ignore
+      }
     }
     return true;
   } catch (error) {
@@ -596,71 +677,88 @@ export async function syncAttemptToCloud(
   const attemptRef = doc(db, 'attempts', safeAttemptId);
   const attemptPath = `attempts/${safeAttemptId}`;
 
-  try {
-    // Never overwrite existing Firestore attempt records
+  // Teacher admin mirroring a local/server student record directly into Firestore
+  if (isTeacherFirebaseUser(user)) {
     try {
-      const existingAttempt = await getDoc(attemptRef);
-      if (existingAttempt.exists()) {
-        return { synced: true, attemptId: safeAttemptId, alreadyExists: true };
-      }
-    } catch (checkErr: any) {
-      const checkCode = String(checkErr?.code || '');
-      // If getDoc returned permission-denied for a non-teacher, the doc likely exists under another ownerUid
-      if (checkCode === 'permission-denied' && !isTeacherFirebaseUser(user)) {
-        logFirestoreError(checkErr, OperationType.GET, attemptPath);
-        return {
-          synced: false,
-          attemptId: safeAttemptId,
-          errorCode: checkCode,
-          errorMessage: 'Không thể kiểm tra bản ghi trên Firestore (permission-denied).',
-        };
-      }
-    }
-
-    // Teacher admin mirroring a local/server student record directly into Firestore
-    if (isTeacherFirebaseUser(user)) {
       await setDoc(attemptRef, payload);
-      return { synced: true, attemptId: safeAttemptId };
-    }
-
-    const studentProfileSeed: Partial<UserProfile> = {
-      id: profile?.id || record.studentId || uid,
-      name: profile?.name || record.studentName,
-      code: profile?.code || record.studentCode,
-      className: profile?.className || record.className,
-      school: profile?.school || record.schoolName,
-      province: profile?.province || 'TỈNH LẠNG SƠN',
-      studentType: profile?.studentType,
-      joinedDate: profile?.joinedDate,
-    };
-
-    // Decouple attempt creation from student profile updates:
-    // 1. Ensure students/{uid} exists (create-only if missing, NEVER update inside attempt write)
-    await ensureStudentProfileDocExists(uid, studentProfileSeed);
-
-    // 2. Write attempts/{id} standalone so any later students/{uid} rule quirk can never block scoring
-    await setDoc(attemptRef, payload);
-
-    // 3. Refresh student profile metadata asynchronously (non-blocking)
-    syncStudentProfileToCloud(studentProfileSeed).catch(() => false);
-
-    return { synced: true, attemptId: safeAttemptId };
-  } catch (error: any) {
-    // Idempotency check: if write actually landed on Firestore, treat as synced without overwriting
-    try {
-      const existingAttempt = await getDoc(attemptRef);
-      if (existingAttempt.exists()) {
-        return { synced: true, attemptId: safeAttemptId, alreadyExists: true };
+      return { synced: true, attemptId: safeAttemptId, profileVerified: true };
+    } catch (error: any) {
+      try {
+        const existingAttempt = await getDoc(attemptRef);
+        if (existingAttempt.exists()) {
+          return { synced: true, attemptId: safeAttemptId, alreadyExists: true, profileVerified: true };
+        }
+      } catch {
+        // ignore secondary check failure
       }
-    } catch {
-      // keep primary error below
+      const info = logFirestoreError(error, OperationType.CREATE, attemptPath);
+      return {
+        synced: false,
+        attemptId: safeAttemptId,
+        errorCode: String(error?.code || 'firestore/write-failed'),
+        errorMessage: info.error,
+      };
+    }
+  }
+
+  const studentProfileSeed: Partial<UserProfile> = {
+    id: profile?.id || record.studentId || uid,
+    name: profile?.name || record.studentName,
+    code: profile?.code || record.studentCode,
+    className: profile?.className || record.className,
+    school: profile?.school || record.schoolName,
+    province: profile?.province || 'TỈNH LẠNG SƠN',
+    studentType: profile?.studentType,
+    joinedDate: profile?.joinedDate,
+  };
+
+  let profileVerified = false;
+  try {
+    // 1. Ensure students/{uid} exists (0 Firestore reads if already cached on this browser)
+    const wasCached = readCachedProfileUids().has(uid);
+    profileVerified = await ensureStudentProfileDocExists(uid, studentProfileSeed, false);
+
+    // 2. Write attempts/{id} directly without pre-reading attempts/{id} (saves 1-2 reads per submit)
+    try {
+      await setDoc(attemptRef, payload);
+      return { synced: true, attemptId: safeAttemptId, profileVerified: true };
+    } catch (writeErr: any) {
+      const writeCode = String(writeErr?.code || '');
+      // If cached UID flag was stale, re-ensure students/{uid} once and retry setDoc
+      if (writeCode === 'permission-denied' && wasCached) {
+        clearCachedProfileUid(uid);
+        profileVerified = await ensureStudentProfileDocExists(uid, studentProfileSeed, true);
+        await setDoc(attemptRef, payload);
+        return { synced: true, attemptId: safeAttemptId, profileVerified: true };
+      }
+      throw writeErr;
+    }
+  } catch (error: any) {
+    const rawCode = String(error?.code || '');
+    const rawMsg = String(error?.message || '');
+    const isQuotaErr =
+      rawCode === 'resource-exhausted' ||
+      rawMsg.toLowerCase().includes('quota') ||
+      rawMsg.toLowerCase().includes('resource-exhausted');
+
+    // Idempotency check ONLY on non-quota failures: if attempt already landed on Firestore under this UID, mark synced without overwriting
+    if (!isQuotaErr) {
+      try {
+        const existingAttempt = await getDoc(attemptRef);
+        if (existingAttempt.exists()) {
+          return { synced: true, attemptId: safeAttemptId, alreadyExists: true, profileVerified };
+        }
+      } catch {
+        // Keep original write error below
+      }
     }
 
     const info = logFirestoreError(error, OperationType.CREATE, attemptPath);
-    const errorCode = String(error?.code || 'firestore/write-failed');
+    const errorCode = rawCode || 'firestore/write-failed';
     return {
       synced: false,
       attemptId: safeAttemptId,
+      profileVerified,
       errorCode,
       errorMessage: info.error,
     };
@@ -888,6 +986,28 @@ function safeParseLearningActivity(
   }
 }
 
+function extractCreatedAtMs(data: Record<string, any> | undefined): number {
+  if (!data) return 0;
+  const c = data.createdAt;
+  if (c && typeof c.toMillis === 'function') {
+    const ms = c.toMillis();
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  if (c && typeof c.seconds === 'number') {
+    return c.seconds * 1000 + Math.floor((Number(c.nanoseconds) || 0) / 1e6);
+  }
+  const rawTs = Number(data.timestamp);
+  return Number.isFinite(rawTs) && rawTs > 0 ? rawTs : 0;
+}
+
+const DEFAULT_ADMIN_PAGE_SIZE = 250;
+
+export interface SubscribeCloudOptions {
+  attemptsSinceCreatedMs?: number;
+  activitiesSinceCreatedMs?: number;
+  pageSize?: number;
+}
+
 export function subscribeCloudData(
   user: FirebaseUser,
   onUpdate: (payload: {
@@ -895,28 +1015,61 @@ export function subscribeCloudData(
     students?: UserProfile[];
     activities?: LearningActivity[];
     collection?: 'attempts' | 'students' | 'activities';
+    isDelta?: boolean;
+    hasMoreAttempts?: boolean;
+    hasMoreActivities?: boolean;
+    latestAttemptCreatedMs?: number;
+    oldestAttemptCreatedMs?: number;
+    latestActivityCreatedMs?: number;
+    oldestActivityCreatedMs?: number;
   }) => void,
-  onError?: (err: Error, collectionName?: 'attempts' | 'students' | 'activities') => void
+  onError?: (err: Error, collectionName?: 'attempts' | 'students' | 'activities') => void,
+  options?: SubscribeCloudOptions
 ): Unsubscribe {
-  if (!isCloudSyncEligibleUser(user)) {
+  // Strictly attach live Firestore listeners ONLY for verified Teacher Admin.
+  // Students write directly to Firestore and read from localStorage — 0 continuous reads per student!
+  if (!isTeacherFirebaseUser(user)) {
     return () => {};
   }
 
   const unsubs: Unsubscribe[] = [];
-  const isTeacher = isTeacherFirebaseUser(user);
+  const pageLimit = options?.pageSize || DEFAULT_ADMIN_PAGE_SIZE;
+  const attemptsSinceMs = Number(options?.attemptsSinceCreatedMs) || 0;
+  const activitiesSinceMs = Number(options?.activitiesSinceCreatedMs) || 0;
 
-  const attemptsQuery = isTeacher
-    ? collection(db, 'attempts')
-    : query(collection(db, 'attempts'), where('ownerUid', '==', user.uid));
+  const attemptsQuery =
+    attemptsSinceMs > 0
+      ? query(
+          collection(db, 'attempts'),
+          where('createdAt', '>', Timestamp.fromMillis(attemptsSinceMs)),
+          orderBy('createdAt', 'desc'),
+          limit(pageLimit)
+        )
+      : query(collection(db, 'attempts'), orderBy('createdAt', 'desc'), limit(pageLimit));
 
   const unsubAttempts = onSnapshot(
     attemptsQuery,
     (snapshot) => {
-      const attempts = snapshot.docs
-        .map((d) => safeParseExamRecord(d.id, d.data()))
-        .filter((r): r is ExamRecord => Boolean(r && r.id))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      onUpdate({ attempts, collection: 'attempts' });
+      let latestCreated = 0;
+      let oldestCreated = 0;
+      const attempts: ExamRecord[] = [];
+      snapshot.docs.forEach((d) => {
+        const data = d.data();
+        const cMs = extractCreatedAtMs(data);
+        if (cMs > latestCreated) latestCreated = cMs;
+        if (cMs > 0 && (oldestCreated === 0 || cMs < oldestCreated)) oldestCreated = cMs;
+        const parsed = safeParseExamRecord(d.id, data);
+        if (parsed && parsed.id) attempts.push(parsed);
+      });
+      attempts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      onUpdate({
+        attempts,
+        collection: 'attempts',
+        isDelta: attemptsSinceMs > 0,
+        hasMoreAttempts: attemptsSinceMs === 0 ? snapshot.docs.length >= pageLimit : undefined,
+        latestAttemptCreatedMs: latestCreated || undefined,
+        oldestAttemptCreatedMs: attemptsSinceMs === 0 ? oldestCreated || undefined : undefined,
+      });
     },
     (error) => {
       const info = logFirestoreError(error, OperationType.LIST, 'attempts');
@@ -925,18 +1078,39 @@ export function subscribeCloudData(
   );
   unsubs.push(unsubAttempts);
 
-  const activitiesQuery = isTeacher
-    ? collection(db, 'activities')
-    : query(collection(db, 'activities'), where('ownerUid', '==', user.uid));
+  const activitiesQuery =
+    activitiesSinceMs > 0
+      ? query(
+          collection(db, 'activities'),
+          where('createdAt', '>', Timestamp.fromMillis(activitiesSinceMs)),
+          orderBy('createdAt', 'desc'),
+          limit(pageLimit)
+        )
+      : query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limit(pageLimit));
 
   const unsubActivities = onSnapshot(
     activitiesQuery,
     (snapshot) => {
-      const activities = snapshot.docs
-        .map((d) => safeParseLearningActivity(d.id, d.data()))
-        .filter((a): a is LearningActivity => Boolean(a && a.id))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      onUpdate({ activities, collection: 'activities' });
+      let latestCreated = 0;
+      let oldestCreated = 0;
+      const activities: LearningActivity[] = [];
+      snapshot.docs.forEach((d) => {
+        const data = d.data();
+        const cMs = extractCreatedAtMs(data);
+        if (cMs > latestCreated) latestCreated = cMs;
+        if (cMs > 0 && (oldestCreated === 0 || cMs < oldestCreated)) oldestCreated = cMs;
+        const parsed = safeParseLearningActivity(d.id, data);
+        if (parsed && parsed.id) activities.push(parsed);
+      });
+      activities.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      onUpdate({
+        activities,
+        collection: 'activities',
+        isDelta: activitiesSinceMs > 0,
+        hasMoreActivities: activitiesSinceMs === 0 ? snapshot.docs.length >= pageLimit : undefined,
+        latestActivityCreatedMs: latestCreated || undefined,
+        oldestActivityCreatedMs: activitiesSinceMs === 0 ? oldestCreated || undefined : undefined,
+      });
     },
     (error) => {
       const info = logFirestoreError(error, OperationType.LIST, 'activities');
@@ -944,41 +1118,6 @@ export function subscribeCloudData(
     }
   );
   unsubs.push(unsubActivities);
-
-  if (isTeacher) {
-    const unsubStudents = onSnapshot(
-      collection(db, 'students'),
-      (snapshot) => {
-        const students = snapshot.docs
-          .map((d) => safeParseUserProfile(d.id, d.data()))
-          .filter((s): s is UserProfile => Boolean(s && s.id));
-        onUpdate({ students, collection: 'students' });
-      },
-      (error) => {
-        const info = logFirestoreError(error, OperationType.LIST, 'students');
-        if (onError) onError(new Error(info.error), 'students');
-      }
-    );
-    unsubs.push(unsubStudents);
-  } else {
-    const studentPath = `students/${user.uid}`;
-    const unsubSelf = onSnapshot(
-      doc(db, 'students', user.uid),
-      (snap) => {
-        if (snap.exists()) {
-          const parsed = safeParseUserProfile(snap.id, snap.data());
-          if (parsed) {
-            onUpdate({ students: [parsed], collection: 'students' });
-          }
-        }
-      },
-      (error) => {
-        const info = logFirestoreError(error, OperationType.GET, studentPath);
-        if (onError) onError(new Error(info.error), 'students');
-      }
-    );
-    unsubs.push(unsubSelf);
-  }
 
   return () => {
     unsubs.forEach((fn) => {
@@ -995,6 +1134,22 @@ export interface FetchCloudSnapshotResult {
   attempts: ExamRecord[];
   students: UserProfile[];
   activities: LearningActivity[];
+  isDelta: {
+    attempts: boolean;
+    activities: boolean;
+  };
+  hasMore: {
+    attempts?: boolean;
+    activities?: boolean;
+  };
+  latestCreatedMs: {
+    attempts?: number;
+    activities?: number;
+  };
+  oldestCreatedMs: {
+    attempts?: number;
+    activities?: number;
+  };
   fetched: {
     attempts: boolean;
     students: boolean;
@@ -1007,27 +1162,62 @@ export interface FetchCloudSnapshotResult {
   };
 }
 
-export async function fetchCloudDataOnce(): Promise<FetchCloudSnapshotResult | null> {
+export async function fetchCloudDataOnce(options?: {
+  attemptsSinceCreatedMs?: number;
+  activitiesSinceCreatedMs?: number;
+  includeAttempts?: boolean;
+  includeActivities?: boolean;
+  includeStudents?: boolean;
+  pageSize?: number;
+}): Promise<FetchCloudSnapshotResult | null> {
   const user = auth.currentUser;
-  if (!isCloudSyncEligibleUser(user)) return null;
+  if (!isTeacherFirebaseUser(user)) return null;
 
-  const isTeacher = isTeacherFirebaseUser(user);
+  const pageLimit = options?.pageSize || DEFAULT_ADMIN_PAGE_SIZE;
+  const attemptsSinceMs = Number(options?.attemptsSinceCreatedMs) || 0;
+  const activitiesSinceMs = Number(options?.activitiesSinceCreatedMs) || 0;
+  const shouldFetchAttempts = options?.includeAttempts !== false;
+  const shouldFetchActivities = options?.includeActivities !== false;
+
   let attempts: ExamRecord[] = [];
   let students: UserProfile[] = [];
   let activities: LearningActivity[] = [];
   const fetched = { attempts: false, students: false, activities: false };
+  const hasMore: { attempts?: boolean; activities?: boolean } = {};
+  const latestCreatedMs: { attempts?: number; activities?: number } = {};
+  const oldestCreatedMs: { attempts?: number; activities?: number } = {};
   const errors: { attempts?: string; students?: string; activities?: string } = {};
 
   const attemptsTask = (async () => {
+    if (!shouldFetchAttempts) return;
     try {
-      const attemptsQuery = isTeacher
-        ? collection(db, 'attempts')
-        : query(collection(db, 'attempts'), where('ownerUid', '==', user.uid));
+      const attemptsQuery =
+        attemptsSinceMs > 0
+          ? query(
+              collection(db, 'attempts'),
+              where('createdAt', '>', Timestamp.fromMillis(attemptsSinceMs)),
+              orderBy('createdAt', 'desc'),
+              limit(pageLimit)
+            )
+          : query(collection(db, 'attempts'), orderBy('createdAt', 'desc'), limit(pageLimit));
       const attSnap = await getDocs(attemptsQuery);
-      attempts = attSnap.docs
-        .map((d) => safeParseExamRecord(d.id, d.data()))
-        .filter((r): r is ExamRecord => Boolean(r && r.id))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      let maxC = 0;
+      let minC = 0;
+      const list: ExamRecord[] = [];
+      attSnap.docs.forEach((d) => {
+        const data = d.data();
+        const cMs = extractCreatedAtMs(data);
+        if (cMs > maxC) maxC = cMs;
+        if (cMs > 0 && (minC === 0 || cMs < minC)) minC = cMs;
+        const parsed = safeParseExamRecord(d.id, data);
+        if (parsed && parsed.id) list.push(parsed);
+      });
+      attempts = list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      if (maxC > 0) latestCreatedMs.attempts = maxC;
+      if (attemptsSinceMs === 0) {
+        hasMore.attempts = attSnap.docs.length >= pageLimit;
+        if (minC > 0) oldestCreatedMs.attempts = minC;
+      }
       fetched.attempts = true;
     } catch (error) {
       const info = logFirestoreError(error, OperationType.LIST, 'attempts');
@@ -1036,15 +1226,35 @@ export async function fetchCloudDataOnce(): Promise<FetchCloudSnapshotResult | n
   })();
 
   const activitiesTask = (async () => {
+    if (!shouldFetchActivities) return;
     try {
-      const activitiesQuery = isTeacher
-        ? collection(db, 'activities')
-        : query(collection(db, 'activities'), where('ownerUid', '==', user.uid));
+      const activitiesQuery =
+        activitiesSinceMs > 0
+          ? query(
+              collection(db, 'activities'),
+              where('createdAt', '>', Timestamp.fromMillis(activitiesSinceMs)),
+              orderBy('createdAt', 'desc'),
+              limit(pageLimit)
+            )
+          : query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limit(pageLimit));
       const actSnap = await getDocs(activitiesQuery);
-      activities = actSnap.docs
-        .map((d) => safeParseLearningActivity(d.id, d.data()))
-        .filter((a): a is LearningActivity => Boolean(a && a.id))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      let maxC = 0;
+      let minC = 0;
+      const list: LearningActivity[] = [];
+      actSnap.docs.forEach((d) => {
+        const data = d.data();
+        const cMs = extractCreatedAtMs(data);
+        if (cMs > maxC) maxC = cMs;
+        if (cMs > 0 && (minC === 0 || cMs < minC)) minC = cMs;
+        const parsed = safeParseLearningActivity(d.id, data);
+        if (parsed && parsed.id) list.push(parsed);
+      });
+      activities = list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      if (maxC > 0) latestCreatedMs.activities = maxC;
+      if (activitiesSinceMs === 0) {
+        hasMore.activities = actSnap.docs.length >= pageLimit;
+        if (minC > 0) oldestCreatedMs.activities = minC;
+      }
       fetched.activities = true;
     } catch (error) {
       const info = logFirestoreError(error, OperationType.LIST, 'activities');
@@ -1053,31 +1263,114 @@ export async function fetchCloudDataOnce(): Promise<FetchCloudSnapshotResult | n
   })();
 
   const studentsTask = (async () => {
+    if (!options?.includeStudents) return;
     try {
-      if (isTeacher) {
-        const stSnap = await getDocs(collection(db, 'students'));
-        students = stSnap.docs
-          .map((d) => safeParseUserProfile(d.id, d.data()))
-          .filter((s): s is UserProfile => Boolean(s && s.id));
-      } else {
-        const selfSnap = await getDoc(doc(db, 'students', user.uid));
-        if (selfSnap.exists()) {
-          const parsed = safeParseUserProfile(selfSnap.id, selfSnap.data());
-          if (parsed) students = [parsed];
-        }
-      }
+      const stSnap = await getDocs(query(collection(db, 'students'), limit(400)));
+      students = stSnap.docs
+        .map((d) => safeParseUserProfile(d.id, d.data()))
+        .filter((s): s is UserProfile => Boolean(s && s.id));
       fetched.students = true;
     } catch (error) {
-      const info = logFirestoreError(
-        error,
-        isTeacher ? OperationType.LIST : OperationType.GET,
-        isTeacher ? 'students' : `students/${user.uid}`
-      );
+      const info = logFirestoreError(error, OperationType.LIST, 'students');
       errors.students = info.error;
     }
   })();
 
   await Promise.allSettled([attemptsTask, activitiesTask, studentsTask]);
 
-  return { attempts, students, activities, fetched, errors };
+  return {
+    attempts,
+    students,
+    activities,
+    isDelta: { attempts: attemptsSinceMs > 0, activities: activitiesSinceMs > 0 },
+    hasMore,
+    latestCreatedMs,
+    oldestCreatedMs,
+    fetched,
+    errors,
+  };
+}
+
+export async function fetchOlderAttemptsPage(
+  beforeCreatedMs: number,
+  pageSize = DEFAULT_ADMIN_PAGE_SIZE
+): Promise<{
+  attempts: ExamRecord[];
+  hasMore: boolean;
+  oldestCreatedMs?: number;
+  error?: string;
+}> {
+  const user = auth.currentUser;
+  if (!isTeacherFirebaseUser(user)) {
+    return { attempts: [], hasMore: false, error: 'Chưa xác thực tài khoản giáo viên.' };
+  }
+  try {
+    const q = query(
+      collection(db, 'attempts'),
+      orderBy('createdAt', 'desc'),
+      startAfter(Timestamp.fromMillis(beforeCreatedMs)),
+      limit(pageSize)
+    );
+    const snap = await getDocs(q);
+    let minC = 0;
+    const list: ExamRecord[] = [];
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      const cMs = extractCreatedAtMs(data);
+      if (cMs > 0 && (minC === 0 || cMs < minC)) minC = cMs;
+      const parsed = safeParseExamRecord(d.id, data);
+      if (parsed && parsed.id) list.push(parsed);
+    });
+    const attempts = list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return {
+      attempts,
+      hasMore: snap.docs.length >= pageSize,
+      oldestCreatedMs: minC || undefined,
+    };
+  } catch (error) {
+    const info = logFirestoreError(error, OperationType.LIST, 'attempts');
+    return { attempts: [], hasMore: false, error: info.error };
+  }
+}
+
+export async function fetchOlderActivitiesPage(
+  beforeCreatedMs: number,
+  pageSize = DEFAULT_ADMIN_PAGE_SIZE
+): Promise<{
+  activities: LearningActivity[];
+  hasMore: boolean;
+  oldestCreatedMs?: number;
+  error?: string;
+}> {
+  const user = auth.currentUser;
+  if (!isTeacherFirebaseUser(user)) {
+    return { activities: [], hasMore: false, error: 'Chưa xác thực tài khoản giáo viên.' };
+  }
+  try {
+    const q = query(
+      collection(db, 'activities'),
+      orderBy('createdAt', 'desc'),
+      startAfter(Timestamp.fromMillis(beforeCreatedMs)),
+      limit(pageSize)
+    );
+    const snap = await getDocs(q);
+    let minC = 0;
+    const list: LearningActivity[] = [];
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      const cMs = extractCreatedAtMs(data);
+      if (cMs > 0 && (minC === 0 || cMs < minC)) minC = cMs;
+      const parsed = safeParseLearningActivity(d.id, data);
+      if (parsed && parsed.id) list.push(parsed);
+    });
+    const activities = list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return {
+      activities,
+      hasMore: snap.docs.length >= pageSize,
+      oldestCreatedMs: minC || undefined,
+    };
+  } catch (error) {
+    const info = logFirestoreError(error, OperationType.LIST, 'activities');
+    return { activities: [], hasMore: false, error: info.error };
+  }
 }

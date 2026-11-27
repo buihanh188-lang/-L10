@@ -119,17 +119,21 @@ function AppContent() {
           apiService.stopTeacherAutoSync();
         }
 
-        unsubCloud = subscribeCloudData(
-          fbUser,
-          (payload) => {
-            apiService.setCloudSyncError(null, payload.collection);
-            apiService.setCloudSyncData(payload);
-          },
-          (err, collectionName) => {
-            apiService.setCloudSyncError(err.message, collectionName);
-            console.warn('Firestore live listener notice:', collectionName, err.message);
-          }
-        );
+        unsubCloud =
+          isTeacherFirebaseUser(fbUser) && apiService.isQuotaCooldownActive()
+            ? () => {}
+            : subscribeCloudData(
+                fbUser,
+                (payload) => {
+                  apiService.setCloudSyncError(null, payload.collection);
+                  apiService.setCloudSyncData(payload);
+                },
+                (err, collectionName) => {
+                  apiService.setCloudSyncError(err.message, collectionName);
+                  console.warn('Firestore live listener notice:', collectionName, err.message);
+                },
+                isTeacherFirebaseUser(fbUser) ? apiService.getTeacherSyncWatermarks() : undefined
+              );
         // Automatically recover device history & flush any queued offline student attempts & learning activities
         const activeOnAuth = StorageService.getCurrentUser();
         if (activeOnAuth?.role === 'student') {
@@ -177,13 +181,18 @@ function AppContent() {
 
     const handleResumeSync = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       const activeUser = StorageService.getCurrentUser();
       if (activeUser?.role === 'student') {
-        apiService.syncStudentDeviceHistoryToServer(activeUser).catch(() => {});
+        if (apiService.hasPendingStudentSyncData()) {
+          apiService.syncStudentDeviceHistoryToServer(activeUser).catch(() => {});
+        }
         apiService.recordLearningActivity({ type: 'visit' }, activeUser).catch(() => false);
       } else {
-        apiService.flushPendingAttempts(activeUser || undefined).catch(() => {});
-        apiService.flushPendingActivities().catch(() => {});
+        if (apiService.hasPendingStudentSyncData()) {
+          apiService.flushPendingAttempts(activeUser || undefined).catch(() => {});
+          apiService.flushPendingActivities().catch(() => {});
+        }
       }
     };
 

@@ -46,6 +46,8 @@ import {
   deleteAttemptFromCloud,
   ensureAnonymousStudentSession,
   fetchCloudDataOnce,
+  fetchOlderActivitiesPage,
+  fetchOlderAttemptsPage,
   getCurrentFirebaseIdToken,
   isCloudSyncEligibleUser,
   isTeacherFirebaseUser,
@@ -75,6 +77,15 @@ const VIDEO_CATALOG_KEY = 'dia_li_10_video_catalog_v1';
 const ROSTER_VERSION_KEY = 'dia_li_10_roster_version';
 const CURRENT_ROSTER_VERSION = 'hb-real-2026-v1';
 const VIDEO_CATALOG_DEFAULT_SYNC_KEY = 'dia_li_10_video_catalog_default_sync_v1';
+const SYNCED_ATTEMPT_IDS_KEY = 'dia_li_10_synced_attempt_ids';
+const SYNCED_ACTIVITY_IDS_KEY = 'dia_li_10_synced_activity_ids';
+const ADMIN_CACHE_ATTEMPTS_KEY = 'dia_li_10_admin_cache_attempts_v1';
+const ADMIN_CACHE_ACTIVITIES_KEY = 'dia_li_10_admin_cache_activities_v1';
+const ADMIN_CACHE_STUDENTS_KEY = 'dia_li_10_admin_cache_students_v1';
+const ADMIN_CACHE_META_KEY = 'dia_li_10_admin_cache_meta_v1';
+const QUOTA_COOLDOWN_KEY = 'dl10_firestore_quota_until';
+const QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
+const STUDENTS_REFRESH_TTL_MS = 15 * 60 * 1000;
 
 const DEFAULT_TEACHER_USER: UserProfile = {
   id: 'teacher-bui-thi-hong-hanh',
@@ -220,6 +231,7 @@ class ApiService {
   private cloudActivities: LearningActivity[] = [];
   private confirmedCloudAttemptIds = new Set<string>();
   private confirmedCloudActivityIds = new Set<string>();
+  private sessionPermissionLockedAttemptIds = new Set<string>();
   private serverAttempts: ExamRecord[] = [];
   private serverStudents: UserProfile[] = [];
   private serverActivities: LearningActivity[] = [];
@@ -228,12 +240,25 @@ class ApiService {
   private studentRetryTimer: number | null = null;
   private bidirectionalSyncRunning = false;
   private studentSyncPromise: Promise<any> | null = null;
+  private teacherRefreshPromise: Promise<boolean> | null = null;
+  private teacherRefreshIsStudentsOnly = false;
   private recordedSessionActivityKeys = new Set<string>();
   private syncingActivityIds = new Set<string>();
   private cloudConnected = false;
   private cloudUserEmail: string | null = null;
   private cloudIsTeacher = false;
   private cloudLastError: string | null = null;
+  private quotaCooldownUntil = 0;
+  private lastAttemptCreatedMs = 0;
+  private oldestAttemptCreatedMs = 0;
+  private lastActivityCreatedMs = 0;
+  private oldestActivityCreatedMs = 0;
+  private lastStudentsSyncAt = 0;
+  private hasMoreAttempts = false;
+  private hasMoreActivities = false;
+  private loadingOlderAttempts = false;
+  private loadingOlderActivities = false;
+  private lastManualRefreshAt = 0;
   private collectionErrors: { attempts?: string; students?: string; activities?: string } = {};
   private lastRecoverySummary: {
     recoveredAttempts: number;
@@ -247,6 +272,349 @@ class ApiService {
 
   constructor() {
     this.migrateLegacyDemoDataOnce();
+    this.loadConfirmedSyncedIds();
+    this.loadQuotaCooldown();
+    if (this.getTeacherToken()) {
+      this.hydrateAdminCache();
+    }
+  }
+
+  private loadQuotaCooldown(): void {
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        const raw = window.sessionStorage.getItem(QUOTA_COOLDOWN_KEY);
+        const until = raw ? Number(raw) : 0;
+        if (Number.isFinite(until) && until > Date.now()) {
+          this.quotaCooldownUntil = until;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private isQuotaError(msg?: string | null): boolean {
+    const s = String(msg || '').toLowerCase();
+    return (
+      s.includes('resource-exhausted') ||
+      s.includes('quota') ||
+      s.includes('free daily read units')
+    );
+  }
+
+  private triggerQuotaCooldown(reason?: string): void {
+    const until = Date.now() + QUOTA_COOLDOWN_MS;
+    if (until > this.quotaCooldownUntil) {
+      this.quotaCooldownUntil = until;
+    }
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.setItem(QUOTA_COOLDOWN_KEY, String(this.quotaCooldownUntil));
+      }
+    } catch {
+      // ignore
+    }
+    if (reason) {
+      this.cloudLastError = String(reason).slice(0, 240);
+    }
+  }
+
+  private clearQuotaCooldown(): void {
+    this.quotaCooldownUntil = 0;
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.removeItem(QUOTA_COOLDOWN_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  isQuotaCooldownActive(): boolean {
+    if (this.quotaCooldownUntil <= 0) return false;
+    if (Date.now() >= this.quotaCooldownUntil) {
+      this.clearQuotaCooldown();
+      return false;
+    }
+    return true;
+  }
+
+  private loadConfirmedSyncedIds(): void {
+    try {
+      const rawAtt = safeGetItem(SYNCED_ATTEMPT_IDS_KEY);
+      if (rawAtt) {
+        const parsed = JSON.parse(rawAtt);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((id) => {
+            if (typeof id === 'string' && id) this.confirmedCloudAttemptIds.add(id);
+          });
+        }
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      const rawAct = safeGetItem(SYNCED_ACTIVITY_IDS_KEY);
+      if (rawAct) {
+        const parsed = JSON.parse(rawAct);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((id) => {
+            if (typeof id === 'string' && id) this.confirmedCloudActivityIds.add(id);
+          });
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private markAttemptConfirmedSynced(attemptId: string): void {
+    if (!attemptId) return;
+    const safeId = sanitizeFirestoreId(attemptId, 'att');
+    this.sessionPermissionLockedAttemptIds.delete(safeId);
+    if (this.confirmedCloudAttemptIds.has(safeId)) return;
+    this.confirmedCloudAttemptIds.add(safeId);
+    try {
+      safeSetItem(
+        SYNCED_ATTEMPT_IDS_KEY,
+        JSON.stringify(Array.from(this.confirmedCloudAttemptIds).slice(-2000))
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  private markActivityConfirmedSynced(activityId: string): void {
+    if (!activityId) return;
+    const safeId = sanitizeFirestoreId(activityId, 'act');
+    if (this.confirmedCloudActivityIds.has(safeId)) return;
+    this.confirmedCloudActivityIds.add(safeId);
+    try {
+      safeSetItem(
+        SYNCED_ACTIVITY_IDS_KEY,
+        JSON.stringify(Array.from(this.confirmedCloudActivityIds).slice(-2500))
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  private hydrateAdminCache(): void {
+    try {
+      const rawAtt = safeGetItem(ADMIN_CACHE_ATTEMPTS_KEY);
+      if (rawAtt) {
+        const parsed = JSON.parse(rawAtt);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter(
+            (r: ExamRecord) =>
+              r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
+          );
+          if (clean.length > 0 && this.cloudAttempts.length === 0) {
+            this.cloudAttempts = clean;
+            clean.forEach((r) =>
+              this.confirmedCloudAttemptIds.add(sanitizeFirestoreId(r.id, 'att'))
+            );
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const rawAct = safeGetItem(ADMIN_CACHE_ACTIVITIES_KEY);
+      if (rawAct) {
+        const parsed = JSON.parse(rawAct);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter((a: LearningActivity) => a && a.id);
+          if (clean.length > 0 && this.cloudActivities.length === 0) {
+            this.cloudActivities = clean;
+            clean.forEach((a) =>
+              this.confirmedCloudActivityIds.add(sanitizeFirestoreId(a.id, 'act'))
+            );
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const rawStu = safeGetItem(ADMIN_CACHE_STUDENTS_KEY);
+      if (rawStu) {
+        const parsed = JSON.parse(rawStu);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter(
+            (s: UserProfile) => s && s.id && !isLegacyDemoStudentId(s.id)
+          );
+          if (clean.length > 0 && this.cloudStudents.length === 0) {
+            this.cloudStudents = clean;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const rawMeta = safeGetItem(ADMIN_CACHE_META_KEY);
+      if (rawMeta) {
+        const meta = JSON.parse(rawMeta);
+        if (meta && typeof meta === 'object') {
+          this.lastAttemptCreatedMs = Number(meta.lastAttemptCreatedMs) || 0;
+          this.oldestAttemptCreatedMs = Number(meta.oldestAttemptCreatedMs) || 0;
+          this.lastActivityCreatedMs = Number(meta.lastActivityCreatedMs) || 0;
+          this.oldestActivityCreatedMs = Number(meta.oldestActivityCreatedMs) || 0;
+          this.lastStudentsSyncAt = Number(meta.lastStudentsSyncAt) || 0;
+          this.hasMoreAttempts = Boolean(meta.hasMoreAttempts);
+          this.hasMoreActivities = Boolean(meta.hasMoreActivities);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private persistAdminCache(): void {
+    try {
+      const cachedAttempts = this.cloudAttempts.slice(0, 1200);
+      try {
+        safeSetItem(ADMIN_CACHE_ATTEMPTS_KEY, JSON.stringify(cachedAttempts));
+      } catch {
+        const compacted = cachedAttempts.map((r, idx) =>
+          idx < 200 ? r : { ...r, details: [] }
+        );
+        try {
+          safeSetItem(ADMIN_CACHE_ATTEMPTS_KEY, JSON.stringify(compacted.slice(0, 800)));
+        } catch {
+          // ignore
+        }
+      }
+
+      try {
+        safeSetItem(
+          ADMIN_CACHE_ACTIVITIES_KEY,
+          JSON.stringify(this.cloudActivities.slice(0, 1500))
+        );
+      } catch {
+        // ignore
+      }
+
+      if (this.cloudStudents.length > 0) {
+        try {
+          safeSetItem(ADMIN_CACHE_STUDENTS_KEY, JSON.stringify(this.cloudStudents.slice(0, 1000)));
+        } catch {
+          // ignore
+        }
+      }
+
+      safeSetItem(
+        ADMIN_CACHE_META_KEY,
+        JSON.stringify({
+          lastAttemptCreatedMs: this.lastAttemptCreatedMs,
+          oldestAttemptCreatedMs: this.oldestAttemptCreatedMs,
+          lastActivityCreatedMs: this.lastActivityCreatedMs,
+          oldestActivityCreatedMs: this.oldestActivityCreatedMs,
+          lastStudentsSyncAt: this.lastStudentsSyncAt,
+          hasMoreAttempts: this.hasMoreAttempts,
+          hasMoreActivities: this.hasMoreActivities,
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  private clearAdminCache(): void {
+    safeRemoveItem(ADMIN_CACHE_ATTEMPTS_KEY);
+    safeRemoveItem(ADMIN_CACHE_ACTIVITIES_KEY);
+    safeRemoveItem(ADMIN_CACHE_STUDENTS_KEY);
+    safeRemoveItem(ADMIN_CACHE_META_KEY);
+    this.lastAttemptCreatedMs = 0;
+    this.oldestAttemptCreatedMs = 0;
+    this.lastActivityCreatedMs = 0;
+    this.oldestActivityCreatedMs = 0;
+    this.lastStudentsSyncAt = 0;
+    this.hasMoreAttempts = false;
+    this.hasMoreActivities = false;
+  }
+
+  private mergeCloudAttemptsList(incoming: ExamRecord[]): { list: ExamRecord[]; changed: boolean } {
+    const byId = new Map<string, ExamRecord>();
+    this.cloudAttempts.forEach((r) => {
+      if (r && r.id) byId.set(sanitizeFirestoreId(r.id, 'att'), r);
+    });
+    const prevSize = byId.size;
+    let changed = false;
+    incoming.forEach((r) => {
+      if (!r || !r.id || isLegacyDemoAttemptId(r.id) || isLegacyDemoStudentId(r.studentId)) return;
+      const key = sanitizeFirestoreId(r.id, 'att');
+      const existing = byId.get(key);
+      if (!existing) {
+        changed = true;
+        byId.set(key, r);
+      } else {
+        const mergedDetails =
+          Array.isArray(r.details) && r.details.length > 0
+            ? r.details
+            : Array.isArray(existing.details)
+            ? existing.details
+            : [];
+        if (
+          existing.score !== r.score ||
+          existing.studentName !== r.studentName ||
+          (existing.details?.length || 0) !== mergedDetails.length
+        ) {
+          changed = true;
+        }
+        byId.set(key, { ...existing, ...r, details: mergedDetails });
+      }
+      this.confirmedCloudAttemptIds.add(key);
+    });
+    const list = Array.from(byId.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return { list, changed: changed || byId.size !== prevSize };
+  }
+
+  private mergeCloudActivitiesList(incoming: LearningActivity[]): {
+    list: LearningActivity[];
+    changed: boolean;
+  } {
+    const byId = new Map<string, LearningActivity>();
+    this.cloudActivities.forEach((a) => {
+      if (a && a.id) byId.set(sanitizeFirestoreId(a.id, 'act'), a);
+    });
+    const prevSize = byId.size;
+    let changed = false;
+    incoming.forEach((a) => {
+      if (!a || !a.id) return;
+      const key = sanitizeFirestoreId(a.id, 'act');
+      if (!byId.has(key)) changed = true;
+      byId.set(key, a);
+      this.confirmedCloudActivityIds.add(key);
+    });
+    const list = Array.from(byId.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return { list, changed: changed || byId.size !== prevSize };
+  }
+
+  private mergeCloudStudentsList(incoming: UserProfile[]): {
+    list: UserProfile[];
+    changed: boolean;
+  } {
+    const byId = new Map<string, UserProfile>();
+    this.cloudStudents.forEach((s) => {
+      if (s && s.id) byId.set(s.id, s);
+    });
+    const prevSize = byId.size;
+    let changed = false;
+    incoming.forEach((s) => {
+      if (!s || !s.id || isLegacyDemoStudentId(s.id)) return;
+      const prev = byId.get(s.id);
+      if (!prev || prev.name !== s.name || prev.className !== s.className || prev.lastLoginAt !== s.lastLoginAt) {
+        changed = true;
+      }
+      byId.set(s.id, { ...(prev || {}), ...s });
+    });
+    return { list: Array.from(byId.values()), changed: changed || byId.size !== prevSize };
   }
 
   private migrateLegacyDemoDataOnce(): void {
@@ -559,23 +927,45 @@ class ApiService {
       this.cloudIsTeacher = Boolean(
         user.emailVerified && user.email && user.email.toLowerCase() === TEACHER_ADMIN_EMAIL
       );
+      if (this.cloudIsTeacher && this.cloudAttempts.length === 0) {
+        this.hydrateAdminCache();
+      }
     } else {
       this.cloudConnected = false;
       this.cloudUserEmail = null;
       this.cloudIsTeacher = false;
-      this.cloudAttempts = [];
-      this.cloudStudents = [];
-      this.cloudActivities = [];
-      this.confirmedCloudAttemptIds.clear();
-      this.confirmedCloudActivityIds.clear();
-      this.collectionErrors = {};
-      this.serverConnected = false;
-      this.serverAttempts = [];
-      this.serverStudents = [];
-      this.serverActivities = [];
       this.stopTeacherAutoSync();
+
+      // Keep teacher cached data intact during transient disconnects/quota limits while teacher token is active
+      if (!this.getTeacherToken()) {
+        this.cloudAttempts = [];
+        this.cloudStudents = [];
+        this.cloudActivities = [];
+        this.collectionErrors = {};
+        this.serverConnected = false;
+        this.serverAttempts = [];
+        this.serverStudents = [];
+        this.serverActivities = [];
+      }
     }
     this.emitDataChanged();
+  }
+
+  getTeacherSyncWatermarks(): {
+    attemptsSinceCreatedMs: number;
+    activitiesSinceCreatedMs: number;
+  } {
+    return {
+      attemptsSinceCreatedMs: this.lastAttemptCreatedMs,
+      activitiesSinceCreatedMs: this.lastActivityCreatedMs,
+    };
+  }
+
+  hasPendingStudentSyncData(): boolean {
+    const hasPendingAttempt = this.getPendingAttempts().some(
+      (p) => p && p.id && !this.sessionPermissionLockedAttemptIds.has(sanitizeFirestoreId(p.id, 'att'))
+    );
+    return hasPendingAttempt || this.getPendingActivities().length > 0;
   }
 
   setCloudSyncData(payload: {
@@ -583,34 +973,66 @@ class ApiService {
     students?: UserProfile[];
     activities?: LearningActivity[];
     collection?: 'attempts' | 'students' | 'activities';
+    isDelta?: boolean;
+    hasMoreAttempts?: boolean;
+    hasMoreActivities?: boolean;
+    latestAttemptCreatedMs?: number;
+    oldestAttemptCreatedMs?: number;
+    latestActivityCreatedMs?: number;
+    oldestActivityCreatedMs?: number;
   }): void {
     if (payload.attempts) {
-      const clean = payload.attempts.filter(
-        (r) => r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
-      );
-      this.cloudAttempts = clean;
-      clean.forEach((r) => this.confirmedCloudAttemptIds.add(sanitizeFirestoreId(r.id, 'att')));
+      const merged = this.mergeCloudAttemptsList(payload.attempts);
+      this.cloudAttempts = merged.list;
       delete this.collectionErrors.attempts;
-      this.mergeAttemptsIntoLocalCache(clean);
+      this.mergeAttemptsIntoLocalCache(merged.list);
+    }
+    if (payload.latestAttemptCreatedMs && payload.latestAttemptCreatedMs > this.lastAttemptCreatedMs) {
+      this.lastAttemptCreatedMs = payload.latestAttemptCreatedMs;
+    }
+    if (
+      payload.oldestAttemptCreatedMs &&
+      (this.oldestAttemptCreatedMs === 0 || payload.oldestAttemptCreatedMs < this.oldestAttemptCreatedMs)
+    ) {
+      this.oldestAttemptCreatedMs = payload.oldestAttemptCreatedMs;
+    }
+    if (typeof payload.hasMoreAttempts === 'boolean') {
+      this.hasMoreAttempts = payload.hasMoreAttempts;
     }
 
     if (payload.students) {
-      const clean = payload.students.filter((s) => s && s.id && !isLegacyDemoStudentId(s.id));
-      this.cloudStudents = clean;
+      const mergedStu = this.mergeCloudStudentsList(payload.students);
+      this.cloudStudents = mergedStu.list;
+      this.lastStudentsSyncAt = Date.now();
       delete this.collectionErrors.students;
-      this.mergeStudentsIntoLocalCache(clean);
+      this.mergeStudentsIntoLocalCache(mergedStu.list);
     }
 
     if (payload.activities) {
-      const cleanActs = payload.activities.filter((a) => a && a.id);
-      this.cloudActivities = cleanActs;
-      cleanActs.forEach((a) => this.confirmedCloudActivityIds.add(sanitizeFirestoreId(a.id, 'act')));
+      const mergedActs = this.mergeCloudActivitiesList(payload.activities);
+      this.cloudActivities = mergedActs.list;
       delete this.collectionErrors.activities;
-      this.mergeActivitiesIntoLocalCache(cleanActs);
+      this.mergeActivitiesIntoLocalCache(mergedActs.list);
+    }
+    if (payload.latestActivityCreatedMs && payload.latestActivityCreatedMs > this.lastActivityCreatedMs) {
+      this.lastActivityCreatedMs = payload.latestActivityCreatedMs;
+    }
+    if (
+      payload.oldestActivityCreatedMs &&
+      (this.oldestActivityCreatedMs === 0 || payload.oldestActivityCreatedMs < this.oldestActivityCreatedMs)
+    ) {
+      this.oldestActivityCreatedMs = payload.oldestActivityCreatedMs;
+    }
+    if (typeof payload.hasMoreActivities === 'boolean') {
+      this.hasMoreActivities = payload.hasMoreActivities;
     }
 
     if (Object.keys(this.collectionErrors).length === 0) {
       this.cloudLastError = null;
+    }
+
+    if (this.cloudIsTeacher || this.getTeacherToken()) {
+      this.persistAdminCache();
     }
 
     this.emitDataChanged();
@@ -634,7 +1056,11 @@ class ApiService {
       if (collectionName) {
         this.collectionErrors[collectionName] = clipped;
       }
-      this.cloudLastError = clipped;
+      if (this.isQuotaError(clipped)) {
+        this.triggerQuotaCooldown(clipped);
+      } else {
+        this.cloudLastError = clipped;
+      }
     }
     this.emitDataChanged();
   }
@@ -674,6 +1100,13 @@ class ApiService {
     cloudActivityCount: number;
     pendingCount: number;
     pendingActivityCount: number;
+    quotaLimited: boolean;
+    hasMoreAttempts: boolean;
+    hasMoreActivities: boolean;
+    loadingOlderAttempts: boolean;
+    loadingOlderActivities: boolean;
+    lastAttemptCreatedMs: number;
+    lastActivityCreatedMs: number;
     lastError: string | null;
     collectionErrors: { attempts?: string; students?: string; activities?: string };
     lastRecoverySummary: {
@@ -710,6 +1143,13 @@ class ApiService {
       cloudActivityCount: uniqueActivityIds.size,
       pendingCount: this.getPendingAttempts().length,
       pendingActivityCount: this.getPendingActivities().length,
+      quotaLimited: this.isQuotaCooldownActive(),
+      hasMoreAttempts: this.hasMoreAttempts,
+      hasMoreActivities: this.hasMoreActivities,
+      loadingOlderAttempts: this.loadingOlderAttempts,
+      loadingOlderActivities: this.loadingOlderActivities,
+      lastAttemptCreatedMs: this.lastAttemptCreatedMs,
+      lastActivityCreatedMs: this.lastActivityCreatedMs,
       lastError: this.cloudLastError,
       collectionErrors: { ...this.collectionErrors },
       lastRecoverySummary: this.lastRecoverySummary,
@@ -728,6 +1168,22 @@ class ApiService {
     needsConsoleEnable?: boolean;
     errorMessage?: string;
   }> {
+    if (this.isQuotaCooldownActive()) {
+      const pendingAttemptsRemaining = this.getPendingAttempts().length;
+      const pendingActivitiesRemaining = this.getPendingActivities().length;
+      return {
+        synced: pendingAttemptsRemaining === 0 && pendingActivitiesRemaining === 0,
+        attemptSynced: pendingAttemptsRemaining === 0,
+        activitySynced: pendingActivitiesRemaining === 0,
+        syncedPending: 0,
+        pendingAttemptsRemaining,
+        pendingActivitiesRemaining,
+        errorMessage:
+          this.cloudLastError ||
+          'Máy chủ đang tạm giới hạn lượt đọc/ghi miễn phí; dữ liệu vẫn được bảo lưu an toàn trên máy.',
+      };
+    }
+
     const session = await ensureAnonymousStudentSession();
     if (session.user) {
       this.setCloudAuthContext(session.user);
@@ -737,13 +1193,12 @@ class ApiService {
     } else if (session.errorMessage || session.errorCode) {
       this.setCloudSyncError(session.errorMessage || session.errorCode || 'Firebase auth error');
     }
-    if (profile && profile.role === 'student') {
+    if (profile && profile.role === 'student' && this.isLocalExpressEnvironment()) {
       this.postProfileToServer(profile).catch(() => false);
     }
 
     const flushedAttempts = await this.flushPendingAttempts(profile || undefined);
     const flushedActivities = await this.flushPendingActivities();
-    await this.refreshCloudData();
 
     const pendingAttemptsRemaining = this.getPendingAttempts().length;
     const pendingActivitiesRemaining = this.getPendingActivities().length;
@@ -860,124 +1315,294 @@ class ApiService {
     }
   }
 
-  async refreshCloudData(options?: { forceEmit?: boolean }): Promise<boolean> {
-    let anySuccess = false;
-    let shouldEmit = Boolean(options?.forceEmit);
-    let teacherHeaders: Record<string, string> | null = null;
+  async refreshCloudData(options?: {
+    forceEmit?: boolean;
+    force?: boolean;
+    studentsOnly?: boolean;
+  }): Promise<boolean> {
+    if (!isTeacherFirebaseUser(auth.currentUser)) {
+      return false;
+    }
 
-    if (isTeacherFirebaseUser(auth.currentUser) && this.isLocalExpressEnvironment()) {
-      teacherHeaders = await this.getTeacherAuthHeaders();
-      if (teacherHeaders) {
-        try {
-          const res = await fetch('/api/teacher/sync-bundle', {
-            headers: teacherHeaders,
-            cache: 'no-store',
-          });
-          const ct = res.headers.get('content-type') || '';
-          if (res.ok && ct.includes('application/json')) {
-            const bundle = await res.json();
-            const serverChanged = this.setServerSyncData({
-              attempts: Array.isArray(bundle?.attempts) ? bundle.attempts : [],
-              students: Array.isArray(bundle?.students) ? bundle.students : [],
-              activities: Array.isArray(bundle?.activities) ? bundle.activities : [],
+    if (this.teacherRefreshPromise) {
+      if (options?.studentsOnly || (!options?.force && !this.teacherRefreshIsStudentsOnly)) {
+        return this.teacherRefreshPromise;
+      }
+      await this.teacherRefreshPromise.catch(() => false);
+      if (this.teacherRefreshPromise) {
+        return this.teacherRefreshPromise;
+      }
+    }
+
+    if (options?.force) {
+      this.clearQuotaCooldown();
+    } else if (this.isQuotaCooldownActive()) {
+      return false;
+    } else if (!options?.studentsOnly && Date.now() - this.lastManualRefreshAt < 10000) {
+      return false;
+    }
+
+    const run = (async () => {
+      let anySuccess = false;
+      let shouldEmit = Boolean(options?.forceEmit);
+      let teacherHeaders: Record<string, string> | null = null;
+      if (!options?.studentsOnly) {
+        this.lastManualRefreshAt = Date.now();
+      }
+
+      if (this.isLocalExpressEnvironment()) {
+        teacherHeaders = await this.getTeacherAuthHeaders();
+        if (teacherHeaders) {
+          try {
+            const res = await fetch('/api/teacher/sync-bundle', {
+              headers: teacherHeaders,
+              cache: 'no-store',
             });
-            if (serverChanged) shouldEmit = true;
+            const ct = res.headers.get('content-type') || '';
+            if (res.ok && ct.includes('application/json')) {
+              const bundle = await res.json();
+              const serverChanged = this.setServerSyncData({
+                attempts: Array.isArray(bundle?.attempts) ? bundle.attempts : [],
+                students: Array.isArray(bundle?.students) ? bundle.students : [],
+                activities: Array.isArray(bundle?.activities) ? bundle.activities : [],
+              });
+              if (serverChanged) shouldEmit = true;
+              anySuccess = true;
+            }
+          } catch (e) {
+            console.warn('Server sync-bundle fetch warning:', e);
+          }
+        }
+      }
+
+      const needStudents =
+        Boolean(options?.force) ||
+        Boolean(options?.studentsOnly) ||
+        this.cloudStudents.length === 0 ||
+        Date.now() - this.lastStudentsSyncAt > STUDENTS_REFRESH_TTL_MS;
+
+      try {
+        const snap = await fetchCloudDataOnce({
+          attemptsSinceCreatedMs: this.lastAttemptCreatedMs,
+          activitiesSinceCreatedMs: this.lastActivityCreatedMs,
+          includeAttempts: !options?.studentsOnly,
+          includeActivities: !options?.studentsOnly,
+          includeStudents: needStudents,
+        });
+
+        if (snap) {
+          if (snap.fetched.attempts) {
+            const merged = this.mergeCloudAttemptsList(snap.attempts);
+            if (merged.changed) shouldEmit = true;
+            this.cloudAttempts = merged.list;
+            if (snap.latestCreatedMs.attempts && snap.latestCreatedMs.attempts > this.lastAttemptCreatedMs) {
+              this.lastAttemptCreatedMs = snap.latestCreatedMs.attempts;
+            }
+            if (
+              snap.oldestCreatedMs.attempts &&
+              (this.oldestAttemptCreatedMs === 0 || snap.oldestCreatedMs.attempts < this.oldestAttemptCreatedMs)
+            ) {
+              this.oldestAttemptCreatedMs = snap.oldestCreatedMs.attempts;
+            }
+            if (typeof snap.hasMore.attempts === 'boolean') {
+              this.hasMoreAttempts = snap.hasMore.attempts;
+            }
+            delete this.collectionErrors.attempts;
+            if (this.mergeAttemptsIntoLocalCache(merged.list)) shouldEmit = true;
             anySuccess = true;
+          } else if (snap.errors.attempts) {
+            this.collectionErrors.attempts = snap.errors.attempts.slice(0, 240);
+            if (this.isQuotaError(snap.errors.attempts)) {
+              this.triggerQuotaCooldown(snap.errors.attempts);
+            }
+            shouldEmit = true;
           }
-        } catch (e) {
-          console.warn('Server sync-bundle fetch warning:', e);
-        }
-      }
-    }
 
+          if (snap.fetched.students) {
+            const mergedStu = this.mergeCloudStudentsList(snap.students);
+            if (mergedStu.changed) shouldEmit = true;
+            this.cloudStudents = mergedStu.list;
+            this.lastStudentsSyncAt = Date.now();
+            delete this.collectionErrors.students;
+            if (this.mergeStudentsIntoLocalCache(mergedStu.list)) shouldEmit = true;
+            anySuccess = true;
+          } else if (snap.errors.students) {
+            this.collectionErrors.students = snap.errors.students.slice(0, 240);
+            if (this.isQuotaError(snap.errors.students)) {
+              this.triggerQuotaCooldown(snap.errors.students);
+            }
+            shouldEmit = true;
+          }
+
+          if (snap.fetched.activities) {
+            const mergedActs = this.mergeCloudActivitiesList(snap.activities);
+            if (mergedActs.changed) shouldEmit = true;
+            this.cloudActivities = mergedActs.list;
+            if (
+              snap.latestCreatedMs.activities &&
+              snap.latestCreatedMs.activities > this.lastActivityCreatedMs
+            ) {
+              this.lastActivityCreatedMs = snap.latestCreatedMs.activities;
+            }
+            if (
+              snap.oldestCreatedMs.activities &&
+              (this.oldestActivityCreatedMs === 0 ||
+                snap.oldestCreatedMs.activities < this.oldestActivityCreatedMs)
+            ) {
+              this.oldestActivityCreatedMs = snap.oldestCreatedMs.activities;
+            }
+            if (typeof snap.hasMore.activities === 'boolean') {
+              this.hasMoreActivities = snap.hasMore.activities;
+            }
+            delete this.collectionErrors.activities;
+            if (this.mergeActivitiesIntoLocalCache(mergedActs.list)) shouldEmit = true;
+            anySuccess = true;
+          } else if (snap.errors.activities) {
+            this.collectionErrors.activities = snap.errors.activities.slice(0, 240);
+            if (this.isQuotaError(snap.errors.activities)) {
+              this.triggerQuotaCooldown(snap.errors.activities);
+            }
+            shouldEmit = true;
+          }
+
+          const errMsgs = Object.values(this.collectionErrors).filter(Boolean);
+          this.cloudLastError = errMsgs.length > 0 ? errMsgs[0]! : null;
+          this.persistAdminCache();
+        }
+      } catch (e: any) {
+        const msg = e?.message ? String(e.message).slice(0, 240) : 'Firestore sync error';
+        if (this.isQuotaError(msg)) {
+          this.triggerQuotaCooldown(msg);
+        } else {
+          this.cloudLastError = msg;
+        }
+        console.warn('refreshCloudData Firestore notice:', e);
+      }
+
+      if (this.isLocalExpressEnvironment() && isTeacherFirebaseUser(auth.currentUser)) {
+        this.runTeacherBidirectionalSync(teacherHeaders || {}).catch(() => {});
+      }
+
+      if (shouldEmit) {
+        this.emitDataChanged();
+      }
+      return anySuccess;
+    })();
+
+    this.teacherRefreshIsStudentsOnly = Boolean(options?.studentsOnly);
+    this.teacherRefreshPromise = run;
     try {
-      const snap = await fetchCloudDataOnce();
-      if (snap) {
-        if (snap.fetched.attempts) {
-          const cleanAttempts = snap.attempts.filter(
-            (r) => r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
-          );
-          if (
-            cleanAttempts.length !== this.cloudAttempts.length ||
-            cleanAttempts[0]?.id !== this.cloudAttempts[0]?.id
-          ) {
-            shouldEmit = true;
-          }
-          this.cloudAttempts = cleanAttempts;
-          cleanAttempts.forEach((r) =>
-            this.confirmedCloudAttemptIds.add(sanitizeFirestoreId(r.id, 'att'))
-          );
-          delete this.collectionErrors.attempts;
-          if (this.mergeAttemptsIntoLocalCache(cleanAttempts)) shouldEmit = true;
-          anySuccess = true;
-        } else if (snap.errors.attempts) {
-          this.collectionErrors.attempts = snap.errors.attempts.slice(0, 240);
-          shouldEmit = true;
-        }
+      return await run;
+    } finally {
+      this.teacherRefreshPromise = null;
+      this.teacherRefreshIsStudentsOnly = false;
+    }
+  }
 
-        if (snap.fetched.students) {
-          const cleanStudents = snap.students.filter((s) => s && s.id && !isLegacyDemoStudentId(s.id));
-          if (cleanStudents.length !== this.cloudStudents.length) {
-            shouldEmit = true;
-          }
-          this.cloudStudents = cleanStudents;
-          delete this.collectionErrors.students;
-          if (this.mergeStudentsIntoLocalCache(cleanStudents)) shouldEmit = true;
-          anySuccess = true;
-        } else if (snap.errors.students) {
-          this.collectionErrors.students = snap.errors.students.slice(0, 240);
-          shouldEmit = true;
-        }
+  async loadOlderAttemptsPage(): Promise<{ loaded: number; hasMore: boolean; error?: string }> {
+    if (!isTeacherFirebaseUser(auth.currentUser)) {
+      return { loaded: 0, hasMore: false, error: 'Chưa xác thực giáo viên.' };
+    }
+    if (this.loadingOlderAttempts || !this.oldestAttemptCreatedMs || !this.hasMoreAttempts) {
+      return { loaded: 0, hasMore: this.hasMoreAttempts };
+    }
+    if (this.isQuotaCooldownActive()) {
+      return {
+        loaded: 0,
+        hasMore: this.hasMoreAttempts,
+        error: 'Hệ thống đang tạm nghỉ do hết hạn mức đọc miễn phí hôm nay.',
+      };
+    }
 
-        if (snap.fetched.activities) {
-          const cleanActivities = snap.activities.filter((a) => a && a.id);
-          if (
-            cleanActivities.length !== this.cloudActivities.length ||
-            cleanActivities[0]?.id !== this.cloudActivities[0]?.id
-          ) {
-            shouldEmit = true;
-          }
-          this.cloudActivities = cleanActivities;
-          cleanActivities.forEach((a) =>
-            this.confirmedCloudActivityIds.add(sanitizeFirestoreId(a.id, 'act'))
-          );
-          delete this.collectionErrors.activities;
-          if (this.mergeActivitiesIntoLocalCache(cleanActivities)) shouldEmit = true;
-          anySuccess = true;
-        } else if (snap.errors.activities) {
-          this.collectionErrors.activities = snap.errors.activities.slice(0, 240);
-          shouldEmit = true;
+    this.loadingOlderAttempts = true;
+    this.emitDataChanged();
+    try {
+      const res = await fetchOlderAttemptsPage(this.oldestAttemptCreatedMs);
+      if (res.error) {
+        if (this.isQuotaError(res.error)) {
+          this.triggerQuotaCooldown(res.error);
         }
-
-        const errMsgs = Object.values(this.collectionErrors).filter(Boolean);
-        this.cloudLastError = errMsgs.length > 0 ? errMsgs[0]! : null;
+        return { loaded: 0, hasMore: this.hasMoreAttempts, error: res.error };
       }
-    } catch (e: any) {
-      this.cloudLastError = e?.message ? String(e.message).slice(0, 240) : 'Firestore sync error';
-      console.warn('refreshCloudData Firestore notice:', e);
-    }
-
-    if (this.isLocalExpressEnvironment() && isTeacherFirebaseUser(auth.currentUser)) {
-      this.runTeacherBidirectionalSync(teacherHeaders || {}).catch(() => {});
-    }
-
-    if (shouldEmit) {
+      const prevCount = this.cloudAttempts.length;
+      const merged = this.mergeCloudAttemptsList(res.attempts);
+      this.cloudAttempts = merged.list;
+      if (
+        res.oldestCreatedMs &&
+        (this.oldestAttemptCreatedMs === 0 || res.oldestCreatedMs < this.oldestAttemptCreatedMs)
+      ) {
+        this.oldestAttemptCreatedMs = res.oldestCreatedMs;
+      }
+      this.hasMoreAttempts = res.hasMore;
+      this.mergeAttemptsIntoLocalCache(merged.list);
+      this.persistAdminCache();
+      this.emitDataChanged();
+      return { loaded: Math.max(0, merged.list.length - prevCount), hasMore: this.hasMoreAttempts };
+    } finally {
+      this.loadingOlderAttempts = false;
       this.emitDataChanged();
     }
-    return anySuccess;
+  }
+
+  async loadOlderActivitiesPage(): Promise<{ loaded: number; hasMore: boolean; error?: string }> {
+    if (!isTeacherFirebaseUser(auth.currentUser)) {
+      return { loaded: 0, hasMore: false, error: 'Chưa xác thực giáo viên.' };
+    }
+    if (this.loadingOlderActivities || !this.oldestActivityCreatedMs || !this.hasMoreActivities) {
+      return { loaded: 0, hasMore: this.hasMoreActivities };
+    }
+    if (this.isQuotaCooldownActive()) {
+      return {
+        loaded: 0,
+        hasMore: this.hasMoreActivities,
+        error: 'Hệ thống đang tạm nghỉ do hết hạn mức đọc miễn phí hôm nay.',
+      };
+    }
+
+    this.loadingOlderActivities = true;
+    this.emitDataChanged();
+    try {
+      const res = await fetchOlderActivitiesPage(this.oldestActivityCreatedMs);
+      if (res.error) {
+        if (this.isQuotaError(res.error)) {
+          this.triggerQuotaCooldown(res.error);
+        }
+        return { loaded: 0, hasMore: this.hasMoreActivities, error: res.error };
+      }
+      const prevCount = this.cloudActivities.length;
+      const merged = this.mergeCloudActivitiesList(res.activities);
+      this.cloudActivities = merged.list;
+      if (
+        res.oldestCreatedMs &&
+        (this.oldestActivityCreatedMs === 0 || res.oldestCreatedMs < this.oldestActivityCreatedMs)
+      ) {
+        this.oldestActivityCreatedMs = res.oldestCreatedMs;
+      }
+      this.hasMoreActivities = res.hasMore;
+      this.mergeActivitiesIntoLocalCache(merged.list);
+      this.persistAdminCache();
+      this.emitDataChanged();
+      return {
+        loaded: Math.max(0, merged.list.length - prevCount),
+        hasMore: this.hasMoreActivities,
+      };
+    } finally {
+      this.loadingOlderActivities = false;
+      this.emitDataChanged();
+    }
   }
 
   startTeacherAutoSync(): void {
     if (typeof window === 'undefined') return;
-    this.refreshCloudData({ forceEmit: true }).catch(() => {});
-    if (this.teacherPollTimer !== null) return;
-    this.teacherPollTimer = window.setInterval(() => {
-      if (isTeacherFirebaseUser(auth.currentUser)) {
-        this.refreshCloudData().catch(() => {});
-      } else {
-        this.stopTeacherAutoSync();
-      }
-    }, 15000);
+    // Zero 15-second polling! Live updates flow via incremental onSnapshot listeners in App.tsx.
+    // Only fetch student roster once on open if cache is empty or older than 15 minutes.
+    if (!isTeacherFirebaseUser(auth.currentUser) || this.isQuotaCooldownActive()) return;
+    const studentsStale =
+      this.cloudStudents.length === 0 ||
+      Date.now() - this.lastStudentsSyncAt > STUDENTS_REFRESH_TTL_MS;
+    if (studentsStale) {
+      this.refreshCloudData({ forceEmit: true, studentsOnly: true }).catch(() => {});
+    }
   }
 
   stopTeacherAutoSync(): void {
@@ -997,9 +1622,8 @@ class ApiService {
         return;
       }
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-      const hasPending =
-        this.getPendingAttempts().length > 0 || this.getPendingActivities().length > 0;
-      if (hasPending) {
+      if (this.isQuotaCooldownActive()) return;
+      if (this.hasPendingStudentSyncData()) {
         this.syncStudentDeviceHistoryToServer(user).catch(() => {});
       }
     }, 25000);
@@ -1401,8 +2025,9 @@ class ApiService {
       lastLoginAt: new Date().toISOString(),
     };
     this.setTeacherToken(token);
+    this.hydrateAdminCache();
     this.setCloudAuthContext(fbUser);
-    await this.refreshCloudData();
+    await this.refreshCloudData({ force: true });
     return { success: true, token, user };
   }
 
@@ -1424,6 +2049,7 @@ class ApiService {
       lastLoginAt: new Date().toISOString(),
     };
     this.setTeacherToken(token);
+    this.hydrateAdminCache();
     this.setCloudAuthContext(fbUser);
     return { token, user };
   }
@@ -1452,7 +2078,6 @@ class ApiService {
     }
 
     const flushed = await this.flushPendingAttempts(profile || undefined);
-    await this.refreshCloudData();
 
     return {
       email: fbUser.email || '',
@@ -1463,6 +2088,7 @@ class ApiService {
 
   async teacherLogout(): Promise<void> {
     this.setTeacherToken(null);
+    this.clearAdminCache();
     await signOutFirebase();
     this.setCloudAuthContext(null);
   }
@@ -2110,11 +2736,11 @@ class ApiService {
         }
       }
 
-      if (isCloudSyncEligibleUser(auth.currentUser)) {
+      if (isCloudSyncEligibleUser(auth.currentUser) && !this.isQuotaCooldownActive()) {
         const res = await syncAttemptToCloud(normalizedRecord, studentProfile);
         firebaseSynced = res.synced;
         if (res.synced) {
-          this.confirmedCloudAttemptIds.add(res.attemptId);
+          this.markAttemptConfirmedSynced(res.attemptId);
           if (!this.cloudAttempts.some((a) => sanitizeFirestoreId(a.id, 'att') === res.attemptId)) {
             this.cloudAttempts = [normalizedRecord, ...this.cloudAttempts];
           }
@@ -2122,10 +2748,18 @@ class ApiService {
           this.cloudLastError = null;
         } else {
           syncError = res.errorMessage || res.errorCode || 'Firestore chưa xác nhận lưu bài làm.';
+          if (this.isQuotaError(syncError)) {
+            this.triggerQuotaCooldown(syncError);
+          }
         }
+      } else if (this.isQuotaCooldownActive()) {
+        syncError = 'Máy chủ đang tạm giới hạn hạn mức đọc/ghi miễn phí; bài làm đã lưu an toàn vào hàng đợi tự đồng bộ lại.';
       }
     } catch (e: any) {
       syncError = e?.message ? String(e.message) : 'Lỗi kết nối Firestore.';
+      if (this.isQuotaError(syncError)) {
+        this.triggerQuotaCooldown(syncError);
+      }
       console.warn('Firestore attempt sync warning:', e);
     }
 
@@ -2266,6 +2900,16 @@ class ApiService {
     const pending = this.getPendingAttempts();
     if (pending.length === 0) return { synced: 0, failed: 0 };
 
+    if (this.isQuotaCooldownActive()) {
+      return {
+        synced: 0,
+        failed: pending.length,
+        lastError:
+          this.cloudLastError ||
+          'Máy chủ đang tạm nghỉ theo hạn mức miễn phí; hàng đợi vẫn được bảo toàn.',
+      };
+    }
+
     let lastError: string | undefined;
     if (!isCloudSyncEligibleUser(auth.currentUser)) {
       const session = await ensureAnonymousStudentSession();
@@ -2287,24 +2931,49 @@ class ApiService {
     let synced = 0;
     let failed = 0;
     const stillPending: ExamRecord[] = [];
-    for (const item of pending) {
+    for (let i = 0; i < pending.length; i++) {
+      const item = pending[i];
       if (!item || !item.id) continue;
       if (isLegacyDemoAttemptId(item.id) || isLegacyDemoStudentId(item.studentId)) continue;
+
+      const safeId = sanitizeFirestoreId(item.id, 'att');
+      if (this.confirmedCloudAttemptIds.has(safeId)) {
+        synced++;
+        continue;
+      }
+
+      if (this.isQuotaCooldownActive()) {
+        for (let j = i; j < pending.length; j++) {
+          if (pending[j] && pending[j].id) {
+            stillPending.push(pending[j]);
+            failed++;
+          }
+        }
+        break;
+      }
 
       let itemFirebaseOk = false;
       try {
         const res = await syncAttemptToCloud(item, user);
         itemFirebaseOk = res.synced;
         if (res.synced) {
-          this.confirmedCloudAttemptIds.add(res.attemptId);
+          this.markAttemptConfirmedSynced(res.attemptId);
           if (!this.cloudAttempts.some((a) => sanitizeFirestoreId(a.id, 'att') === res.attemptId)) {
             this.cloudAttempts = [item, ...this.cloudAttempts];
           }
         } else if (res.errorMessage || res.errorCode) {
           lastError = res.errorMessage || res.errorCode;
+          if (this.isQuotaError(lastError)) {
+            this.triggerQuotaCooldown(lastError);
+          } else if (res.errorCode === 'permission-denied' && res.profileVerified) {
+            this.sessionPermissionLockedAttemptIds.add(safeId);
+          }
         }
       } catch (e: any) {
         lastError = e?.message ? String(e.message) : 'Firestore write error';
+        if (this.isQuotaError(lastError)) {
+          this.triggerQuotaCooldown(lastError);
+        }
         console.warn('Pending attempt Firestore sync warning:', e);
       }
 
@@ -2347,6 +3016,16 @@ class ApiService {
       };
     }
 
+    if (this.isQuotaCooldownActive()) {
+      return {
+        recoveredAttempts: 0,
+        recoveredActivities: 0,
+        pendingAttempts: this.getPendingAttempts().length,
+        pendingActivities: this.getPendingActivities().length,
+        error: this.cloudLastError || undefined,
+      };
+    }
+
     if (this.studentSyncPromise) {
       return this.studentSyncPromise;
     }
@@ -2382,116 +3061,120 @@ class ApiService {
         return summary;
       }
 
-      // Sync student profile separately (non-blocking for attempt/activity backfill)
+      // Sync student profile separately (cached with 12h TTL in firebase.ts — 0 reads on repeat visits)
       syncStudentProfileToCloud(user).catch(() => false);
       if (this.isLocalExpressEnvironment()) {
         this.postProfileToServer(user).catch(() => false);
       }
 
-      // Populate known Firestore IDs for this session before backfilling
-      try {
-        const snap = await fetchCloudDataOnce();
-        if (snap) {
-          if (snap.fetched.attempts) {
-            this.cloudAttempts = snap.attempts;
-            snap.attempts.forEach((a) =>
-              this.confirmedCloudAttemptIds.add(sanitizeFirestoreId(a.id, 'att'))
-            );
-          }
-          if (snap.fetched.activities) {
-            this.cloudActivities = snap.activities;
-            snap.activities.forEach((a) =>
-              this.confirmedCloudActivityIds.add(sanitizeFirestoreId(a.id, 'act'))
-            );
-          }
-        }
-      } catch {
-        // continue with known IDs
-      }
-
       let recoveredAttempts = 0;
       let recoveredActivities = 0;
 
-      // 1. Flush explicit pending attempts queue first (no cap)
+      // 1. Flush explicit pending attempts queue first (no cap; zero collection scan reads!)
       const flushedAtt = await this.flushPendingAttempts(user);
       recoveredAttempts += flushedAtt.synced;
       if (flushedAtt.lastError) lastError = flushedAtt.lastError;
 
       // 2. Scan ALL dia_li_10_exam_records on device (no 40-record limit) and backfill any unconfirmed attempts
-      try {
-        const rawLocalAttempts = this.getPureLocalExamRecords().filter(
-          (r) =>
-            r &&
-            r.id &&
-            !isLegacyDemoAttemptId(r.id) &&
-            !isLegacyDemoStudentId(r.studentId)
-        );
-        const pendingIds = this.getPendingAttemptIdSet();
+      if (!this.isQuotaCooldownActive()) {
+        try {
+          const rawLocalAttempts = this.getPureLocalExamRecords().filter(
+            (r) =>
+              r &&
+              r.id &&
+              !isLegacyDemoAttemptId(r.id) &&
+              !isLegacyDemoStudentId(r.studentId)
+          );
+          const pendingIds = this.getPendingAttemptIdSet();
 
-        for (const att of rawLocalAttempts) {
-          const safeId = sanitizeFirestoreId(att.id, 'att');
-          if (this.confirmedCloudAttemptIds.has(safeId)) {
-            this.removePendingAttempt(att.id);
-            continue;
-          }
-          if (pendingIds.has(safeId)) {
-            // Already attempted in flushPendingAttempts above and still failed
-            continue;
-          }
-          const res = await syncAttemptToCloud(att, user);
-          if (res.synced) {
-            this.confirmedCloudAttemptIds.add(res.attemptId);
-            this.removePendingAttempt(att.id);
-            if (!this.cloudAttempts.some((a) => sanitizeFirestoreId(a.id, 'att') === res.attemptId)) {
-              this.cloudAttempts = [att, ...this.cloudAttempts];
+          for (const att of rawLocalAttempts) {
+            if (this.isQuotaCooldownActive()) break;
+            const safeId = sanitizeFirestoreId(att.id, 'att');
+            if (this.confirmedCloudAttemptIds.has(safeId)) {
+              this.removePendingAttempt(att.id);
+              continue;
             }
-            recoveredAttempts++;
-          } else {
-            this.addPendingAttempt(att);
-            if (res.errorMessage || res.errorCode) {
-              lastError = res.errorMessage || res.errorCode;
+            if (
+              pendingIds.has(safeId) ||
+              this.sessionPermissionLockedAttemptIds.has(safeId)
+            ) {
+              continue;
+            }
+            const res = await syncAttemptToCloud(att, user);
+            if (res.synced) {
+              this.markAttemptConfirmedSynced(res.attemptId);
+              this.removePendingAttempt(att.id);
+              if (!this.cloudAttempts.some((a) => sanitizeFirestoreId(a.id, 'att') === res.attemptId)) {
+                this.cloudAttempts = [att, ...this.cloudAttempts];
+              }
+              recoveredAttempts++;
+            } else {
+              if (this.isQuotaError(res.errorMessage || res.errorCode)) {
+                this.triggerQuotaCooldown(res.errorMessage || res.errorCode);
+                this.addPendingAttempt(att);
+                lastError = res.errorMessage || res.errorCode;
+                break;
+              }
+              if (res.errorCode === 'permission-denied' && res.profileVerified) {
+                this.sessionPermissionLockedAttemptIds.add(safeId);
+                continue;
+              }
+              this.addPendingAttempt(att);
+              if (res.errorMessage || res.errorCode) {
+                lastError = res.errorMessage || res.errorCode;
+              }
             }
           }
+        } catch (err: any) {
+          lastError = err?.message || lastError;
         }
-      } catch (err: any) {
-        lastError = err?.message || lastError;
       }
 
       // 3. Flush explicit pending activities queue first
-      const flushedAct = await this.flushPendingActivities();
-      recoveredActivities += flushedAct.synced;
-      if (flushedAct.lastError && !lastError) lastError = flushedAct.lastError;
+      if (!this.isQuotaCooldownActive()) {
+        const flushedAct = await this.flushPendingActivities();
+        recoveredActivities += flushedAct.synced;
+        if (flushedAct.lastError && !lastError) lastError = flushedAct.lastError;
+      }
 
       // 4. Scan ALL dia_li_10_learning_activities on device (no 40-record limit) and backfill any unconfirmed activities
-      try {
-        const rawLocalActs = this.getLocalActivitiesList().filter((a) => a && a.id);
-        const pendingActIds = new Set(
-          this.getPendingActivities().map((a) => sanitizeFirestoreId(a.id, 'act'))
-        );
+      if (!this.isQuotaCooldownActive()) {
+        try {
+          const rawLocalActs = this.getLocalActivitiesList().filter((a) => a && a.id);
+          const pendingActIds = new Set(
+            this.getPendingActivities().map((a) => sanitizeFirestoreId(a.id, 'act'))
+          );
 
-        for (const act of rawLocalActs) {
-          const safeId = sanitizeFirestoreId(act.id, 'act');
-          if (this.confirmedCloudActivityIds.has(safeId) || pendingActIds.has(safeId)) {
-            continue;
-          }
-          const res = await syncActivityToCloud(act);
-          if (res.synced) {
-            this.confirmedCloudActivityIds.add(res.activityId);
-            if (!this.cloudActivities.some((a) => sanitizeFirestoreId(a.id, 'act') === res.activityId)) {
-              this.cloudActivities = [act, ...this.cloudActivities];
+          for (const act of rawLocalActs) {
+            if (this.isQuotaCooldownActive()) break;
+            const safeId = sanitizeFirestoreId(act.id, 'act');
+            if (this.confirmedCloudActivityIds.has(safeId) || pendingActIds.has(safeId)) {
+              continue;
             }
-            recoveredActivities++;
-          } else {
-            const nextPending = this.getPendingActivities().filter((p) => p.id !== act.id);
-            nextPending.push(act);
-            this.savePendingActivities(nextPending);
-            if (!lastError && (res.errorMessage || res.errorCode)) {
-              lastError = res.errorMessage || res.errorCode;
+            const res = await syncActivityToCloud(act);
+            if (res.synced) {
+              this.markActivityConfirmedSynced(res.activityId);
+              if (!this.cloudActivities.some((a) => sanitizeFirestoreId(a.id, 'act') === res.activityId)) {
+                this.cloudActivities = [act, ...this.cloudActivities];
+              }
+              recoveredActivities++;
+            } else {
+              if (this.isQuotaError(res.errorMessage || res.errorCode)) {
+                this.triggerQuotaCooldown(res.errorMessage || res.errorCode);
+                lastError = res.errorMessage || res.errorCode;
+                break;
+              }
+              const nextPending = this.getPendingActivities().filter((p) => p.id !== act.id);
+              nextPending.push(act);
+              this.savePendingActivities(nextPending);
+              if (!lastError && (res.errorMessage || res.errorCode)) {
+                lastError = res.errorMessage || res.errorCode;
+              }
             }
           }
+        } catch {
+          // non-blocking
         }
-      } catch {
-        // non-blocking
       }
 
       const summary = {
@@ -2666,14 +3349,16 @@ class ApiService {
         }
       }
       let firebaseOk = false;
-      if (isCloudSyncEligibleUser(auth.currentUser)) {
+      if (isCloudSyncEligibleUser(auth.currentUser) && !this.isQuotaCooldownActive()) {
         const res = await syncActivityToCloud(activity);
         firebaseOk = res.synced;
         if (res.synced) {
-          this.confirmedCloudActivityIds.add(res.activityId);
+          this.markActivityConfirmedSynced(res.activityId);
           if (!this.cloudActivities.some((a) => sanitizeFirestoreId(a.id, 'act') === res.activityId)) {
             this.cloudActivities = [activity, ...this.cloudActivities];
           }
+        } else if (this.isQuotaError(res.errorMessage || res.errorCode)) {
+          this.triggerQuotaCooldown(res.errorMessage || res.errorCode);
         }
       }
 
@@ -2701,6 +3386,14 @@ class ApiService {
     const pending = this.getPendingActivities();
     if (pending.length === 0) return { synced: 0, failed: 0 };
 
+    if (this.isQuotaCooldownActive()) {
+      return {
+        synced: 0,
+        failed: pending.length,
+        lastError: this.cloudLastError || undefined,
+      };
+    }
+
     let lastError: string | undefined;
     if (!isCloudSyncEligibleUser(auth.currentUser)) {
       const session = await ensureAnonymousStudentSession();
@@ -2722,8 +3415,23 @@ class ApiService {
     let synced = 0;
     let failed = 0;
     const stillPending: LearningActivity[] = [];
-    for (const item of pending) {
+    for (let i = 0; i < pending.length; i++) {
+      const item = pending[i];
       if (!item || !item.id) continue;
+      const safeId = sanitizeFirestoreId(item.id, 'act');
+      if (this.confirmedCloudActivityIds.has(safeId)) {
+        synced++;
+        continue;
+      }
+      if (this.isQuotaCooldownActive()) {
+        for (let j = i; j < pending.length; j++) {
+          if (pending[j] && pending[j].id) {
+            stillPending.push(pending[j]);
+            failed++;
+          }
+        }
+        break;
+      }
       if (this.syncingActivityIds.has(item.id)) {
         stillPending.push(item);
         continue;
@@ -2734,7 +3442,7 @@ class ApiService {
         const res = await syncActivityToCloud(item);
         firebaseOk = res.synced;
         if (res.synced) {
-          this.confirmedCloudActivityIds.add(res.activityId);
+          this.markActivityConfirmedSynced(res.activityId);
           if (!this.cloudActivities.some((a) => sanitizeFirestoreId(a.id, 'act') === res.activityId)) {
             this.cloudActivities = [item, ...this.cloudActivities];
           }
@@ -2744,6 +3452,9 @@ class ApiService {
           );
         } else if (res.errorMessage || res.errorCode) {
           lastError = res.errorMessage || res.errorCode;
+          if (this.isQuotaError(lastError)) {
+            this.triggerQuotaCooldown(lastError);
+          }
         }
 
         if (this.isLocalExpressEnvironment()) {
@@ -2758,6 +3469,9 @@ class ApiService {
         }
       } catch (e: any) {
         lastError = e?.message ? String(e.message) : 'Firestore activity write error';
+        if (this.isQuotaError(lastError)) {
+          this.triggerQuotaCooldown(lastError);
+        }
         failed++;
         stillPending.push(item);
       } finally {

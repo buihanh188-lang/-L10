@@ -145,12 +145,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const handleManualCloudRefresh = async () => {
     setConnectingCloud(true);
     try {
-      await apiService.refreshCloudData();
+      await apiService.refreshCloudData({ force: true });
       setCloudStatus(apiService.getCloudSyncStatus());
       setDataVersion((v) => v + 1);
     } finally {
       setConnectingCloud(false);
     }
+  };
+
+  const handleLoadOlderAttempts = async () => {
+    await apiService.loadOlderAttemptsPage();
+    setCloudStatus(apiService.getCloudSyncStatus());
+    setDataVersion((v) => v + 1);
+  };
+
+  const handleLoadOlderActivities = async () => {
+    await apiService.loadOlderActivitiesPage();
+    setCloudStatus(apiService.getCloudSyncStatus());
+    setDataVersion((v) => v + 1);
   };
 
   // Filter states for analytics
@@ -822,11 +834,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     {cloudStatus.pendingCount} {isEn ? 'pending on device' : 'đang chờ đồng bộ'}
                   </span>
                 )}
+                {cloudStatus.quotaLimited && (
+                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold">
+                    {isEn ? 'Spark Quota Cache Mode' : 'Đang dùng bộ nhớ đệm (tiết kiệm hạn mức)'}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-emerald-800/90 mt-0.5">
-                {isEn
-                  ? `Signed in as ${cloudStatus.email}. All student quiz scores, app visits, lesson views, and video views update live without reloading.`
-                  : `Tài khoản giáo viên: ${cloudStatus.email}. Học sinh nộp bài, vào app, xem bài hoặc xem video từ bất kì thiết bị nào đều tự động cập nhật trực tiếp tại đây không cần tải lại trang.`}
+                {cloudStatus.quotaLimited
+                  ? isEn
+                    ? `Signed in as ${cloudStatus.email}. Displaying preserved cached data while Firestore free daily read quota recovers. Click Refresh Now when ready.`
+                    : `Tài khoản giáo viên: ${cloudStatus.email}. Hệ thống đang giữ nguyên số liệu đã lưu trong bộ nhớ đệm để tránh vượt hạn mức đọc miễn phí Firebase Spark. Cô có thể bấm "Làm mới ngay" khi cần kiểm tra lại.`
+                  : isEn
+                    ? `Signed in as ${cloudStatus.email}. Incremental Firestore sync is active (Spark free-tier optimized) without background polling.`
+                    : `Tài khoản giáo viên: ${cloudStatus.email}. Đang bật đồng bộ gia tăng tiết kiệm lượt đọc Firebase Spark (chỉ tải dữ liệu mới phát sinh, không quét lặp lại).`}
               </p>
               {(cloudStatus.lastError ||
                 cloudStatus.collectionErrors?.attempts ||
@@ -849,15 +870,36 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               )}
             </div>
           </div>
-          <button
-            type="button"
-            disabled={connectingCloud}
-            onClick={handleManualCloudRefresh}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${connectingCloud ? 'animate-spin' : ''}`} />
-            <span>{isEn ? 'Refresh Now' : 'Làm mới ngay'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {cloudStatus.hasMoreAttempts && (
+              <button
+                type="button"
+                disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                onClick={handleLoadOlderAttempts}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-900 border border-emerald-300 text-xs font-bold cursor-pointer disabled:opacity-50"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>
+                  {cloudStatus.loadingOlderAttempts
+                    ? isEn
+                      ? 'Loading older...'
+                      : 'Đang tải...'
+                    : isEn
+                      ? 'Load Older Attempts'
+                      : 'Tải thêm bài làm cũ hơn'}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={connectingCloud}
+              onClick={handleManualCloudRefresh}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${connectingCloud ? 'animate-spin' : ''}`} />
+              <span>{isEn ? 'Refresh Now' : 'Làm mới ngay'}</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -1524,6 +1566,32 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </tbody>
               </table>
             </div>
+            {cloudStatus.connected && cloudStatus.isTeacher && cloudStatus.hasMoreAttempts && (
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
+                <span className="text-slate-500">
+                  {isEn
+                    ? `Currently displaying ${cloudStatus.cloudAttemptCount} most recent synced attempts.`
+                    : `Đang hiển thị ${cloudStatus.cloudAttemptCount} bài làm gần nhất để tiết kiệm hạn mức đọc Firebase Spark.`}
+                </span>
+                <button
+                  type="button"
+                  disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                  onClick={handleLoadOlderAttempts}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>
+                    {cloudStatus.loadingOlderAttempts
+                      ? isEn
+                        ? 'Loading older attempts...'
+                        : 'Đang tải bài làm cũ hơn...'
+                      : isEn
+                        ? 'Load Older Attempts'
+                        : 'Tải thêm bài làm cũ hơn'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2288,6 +2356,48 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     ? `Local device queue waiting: ${cloudStatus.pendingCount} attempts, ${cloudStatus.pendingActivityCount} activities.`
                     : `Hàng đợi cục bộ trên thiết bị này: ${cloudStatus.pendingCount} bài làm, ${cloudStatus.pendingActivityCount} hoạt động đang chờ gửi.`}
                 </p>
+              )}
+              {(cloudStatus.hasMoreAttempts || cloudStatus.hasMoreActivities) && (
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  {cloudStatus.hasMoreAttempts && (
+                    <button
+                      type="button"
+                      disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                      onClick={handleLoadOlderAttempts}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>
+                        {cloudStatus.loadingOlderAttempts
+                          ? isEn
+                            ? 'Loading older attempts...'
+                            : 'Đang tải bài làm cũ hơn...'
+                          : isEn
+                            ? 'Load Older Attempts'
+                            : 'Tải thêm bài làm cũ hơn'}
+                      </span>
+                    </button>
+                  )}
+                  {cloudStatus.hasMoreActivities && (
+                    <button
+                      type="button"
+                      disabled={cloudStatus.loadingOlderActivities || connectingCloud}
+                      onClick={handleLoadOlderActivities}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-sky-100 text-sky-900 border border-sky-300 text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>
+                        {cloudStatus.loadingOlderActivities
+                          ? isEn
+                            ? 'Loading older activities...'
+                            : 'Đang tải hoạt động cũ hơn...'
+                          : isEn
+                            ? 'Load Older Activities'
+                            : 'Tải thêm hoạt động cũ hơn'}
+                      </span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ) : (
