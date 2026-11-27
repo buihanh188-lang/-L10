@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Question, TeacherExamConfig, UserProfile } from '../types';
 import { StorageService } from '../services/storage';
+import { apiService } from '../services/api';
 import { useLanguage } from '../contexts/LanguageContext';
 import { localizeExamTitle, localizeQuestion } from '../services/bilingualQuestions';
 
@@ -41,6 +42,11 @@ export const ExamHub: React.FC<ExamHubProps> = ({
 }) => {
   const { language, t } = useLanguage();
   const isEn = language === 'en';
+  const [, setSyncTick] = useState(0);
+
+  React.useEffect(() => {
+    return apiService.subscribeToDataChanges(() => setSyncTick((n) => n + 1));
+  }, []);
 
   const [activeTab, setActiveTab] = useState<'teacher' | 'midterm' | 'final' | 'speed'>('teacher');
   const allTeacherExams = StorageService.getTeacherExams();
@@ -48,7 +54,7 @@ export const ExamHub: React.FC<ExamHubProps> = ({
   const teacherExams = allTeacherExams.filter(
     (e) => e.isAssigned !== false && e.isActive !== false
   );
-  const allRecords = StorageService.getExamRecords();
+  const allRecords = apiService.getAttemptsSnapshot();
 
   // Find completion status for a given exam title (matches both VI and EN titles)
   const getAttemptForExam = (title: string) => {

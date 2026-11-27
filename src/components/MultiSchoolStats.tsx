@@ -131,9 +131,9 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
 
   const hoaBinhKey = normalizeSchoolKey('TRƯỜNG THPT HÒA BÌNH');
 
-  // Load Initial Data
-  const loadData = async () => {
-    setIsLoading(true);
+  // Load Initial & Live Data
+  const loadData = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const [sumData, schoolsData] = await Promise.all([
         apiService.getSystemSummary(authUser),
@@ -146,7 +146,7 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
         selectedSchool === 'all' || schoolsData.some((s) => normalizeSchoolKey(s.schoolName) === normalizeSchoolKey(selectedSchool))
           ? selectedSchool
           : 'all';
-      setSelectedSchool(targetSchool);
+      if (targetSchool !== selectedSchool) setSelectedSchool(targetSchool);
 
       const classesData = await apiService.getClassesBySchool(targetSchool, authUser);
       setClasses(classesData);
@@ -155,10 +155,14 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
         selectedClass === 'all' || classesData.some((c) => c.className === selectedClass)
           ? selectedClass
           : 'all';
-      setSelectedClass(targetClass);
+      if (targetClass !== selectedClass) setSelectedClass(targetClass);
 
       const studentsData = await apiService.getStudentsByClass(targetSchool, targetClass, authUser);
       setStudents(studentsData);
+      setSelectedStudentDossier((prev) => {
+        if (!prev) return null;
+        return studentsData.find((s) => s.studentId === prev.studentId || s.studentCode === prev.studentCode) || prev;
+      });
 
       // Load SKKN analytics
       const skknRes = await apiService.getSKKNAnalytics(skknFilters);
@@ -170,13 +174,28 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
     } catch (err) {
       console.error('Error loading multi-school stats:', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, [effectiveRole, selectedSchoolForTeacher]);
+
+  // Live updates from Firestore listener without resetting filters, tabs, or open modals
+  useEffect(() => {
+    let timer: number | null = null;
+    const unsub = apiService.subscribeToDataChanges(() => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        loadData(true);
+      }, 250);
+    });
+    return () => {
+      unsub();
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [effectiveRole, selectedSchoolForTeacher, selectedSchool, selectedClass, skknFilters]);
 
   // Reload SKKN data when Area 4 filters change
   useEffect(() => {
@@ -440,7 +459,7 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
             )}
 
             <button
-              onClick={loadData}
+              onClick={() => loadData(false)}
               disabled={isLoading}
               className="w-full py-1.5 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
             >

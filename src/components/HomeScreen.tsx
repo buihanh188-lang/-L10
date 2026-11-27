@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { StorageService } from '../services/storage';
+import { apiService } from '../services/api';
 import { CURRICULUM_PARTS, CURRICULUM_CHAPTERS } from '../data/curriculum';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getLocalizedPart, getLocalizedChapter } from '../data/bilingualCurriculum';
@@ -32,8 +33,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 }) => {
   const { language, t } = useLanguage();
   const isEn = language === 'en';
+  const [, setSyncTick] = React.useState(0);
 
-  const studentRecords = StorageService.getStudentRecords(currentUser.id);
+  React.useEffect(() => {
+    return apiService.subscribeToDataChanges(() => setSyncTick((n) => n + 1));
+  }, []);
+
+  const studentRecords = apiService.getStudentAttemptsSnapshot(currentUser.id);
   const totalQuestionsDone = studentRecords.reduce((acc, r) => acc + r.totalQuestions, 0);
   const avgScore =
     studentRecords.length > 0

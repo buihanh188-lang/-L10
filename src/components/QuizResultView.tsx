@@ -58,9 +58,10 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
     [record.id, cloudStatus, justSynced]
   );
   const isSyncedToTeacher =
-    Boolean((record as any).cloudSynced) ||
-    (cloudStatus.connected && !isRecordPending) ||
-    justSynced;
+    !isRecordPending &&
+    (Boolean((record as any).cloudSynced) ||
+      apiService.isAttemptSyncedToCloud(record.id) ||
+      justSynced);
 
   useEffect(() => {
     return apiService.subscribeToDataChanges(() => {
@@ -68,7 +69,7 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
     });
   }, []);
 
-  // Automatically retry background cloud sync if submission was momentarily queued (zero manual click needed)
+  // Automatically retry background Firestore sync if submission was queued (zero manual click needed)
   useEffect(() => {
     if (isSyncedToTeacher) return;
     let cancelled = false;
@@ -78,7 +79,12 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
         const res = await apiService.retryStudentAutoSync(currentUser);
         if (!cancelled) {
           setCloudStatus(apiService.getCloudSyncStatus());
-          if (res.synced) setJustSynced(true);
+          if (res.attemptSynced || apiService.isAttemptSyncedToCloud(record.id)) {
+            setJustSynced(true);
+            setSyncError('');
+          } else if (res.errorMessage) {
+            setSyncError(res.errorMessage);
+          }
         }
       } catch {
         // silent retry
@@ -100,20 +106,21 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
       const currentUser = StorageService.getCurrentUser();
       const res = await apiService.retryStudentAutoSync(currentUser);
       setCloudStatus(apiService.getCloudSyncStatus());
-      if (res.synced) {
+      if (res.attemptSynced || apiService.isAttemptSyncedToCloud(record.id)) {
         setJustSynced(true);
       } else {
+        const detail = res.errorMessage || (record as any).syncError || '';
         setSyncError(
           isEn
-            ? 'Still offline or cloud sync is waiting to be activated. Your score is safely saved on this device.'
-            : 'Chưa kết nối được máy chủ đồng bộ lúc này. Điểm vẫn được lưu an toàn trên máy — em có thể thử lại sau hoặc sao chép phiếu dự phòng.'
+            ? `Saved locally and queued for automatic Firestore sync${detail ? ` (${detail})` : ''}. You can retry now or copy a backup slip.`
+            : `Điểm đã được lưu an toàn trên máy và đang chờ đồng bộ lên Firebase${detail ? ` (${detail})` : ''}. Hệ thống sẽ tự động gửi lại khi mạng ổn định hoặc em có thể bấm Đồng bộ lại.`
         );
       }
-    } catch {
+    } catch (err: any) {
       setSyncError(
         isEn
-          ? 'Could not sync right now. Your score is safely saved on this device.'
-          : 'Chưa đồng bộ được lúc này. Điểm vẫn được lưu an toàn trên máy của em.'
+          ? `Could not confirm Firestore write yet${err?.message ? ` (${err.message})` : ''}. Your score is safely queued on this device.`
+          : `Chưa xác nhận ghi được lên Firebase lúc này${err?.message ? ` (${err.message})` : ''}. Điểm đã được lưu an toàn trên máy để tự đồng bộ lại.`
       );
     } finally {
       setSyncingCloud(false);
@@ -304,9 +311,10 @@ export const QuizResultView: React.FC<QuizResultViewProps> = ({
                 </div>
                 <p className="text-[11px] text-amber-800 mt-0.5">
                   {syncError ||
+                    (record as any).syncError ||
                     (isEn
-                      ? 'Tap Retry Sync to send this score automatically to your teacher.'
-                      : 'Bấm "Đồng bộ lại" để gửi điểm tự động lên Trang quản trị của cô Hạnh.')}
+                      ? 'Automatically retrying Firebase Firestore sync — or tap Retry Sync now.'
+                      : 'Hệ thống đang tự động thử gửi lại lên Firebase Firestore, hoặc em có thể bấm "Đồng bộ lại".')}
                 </p>
               </div>
               <button

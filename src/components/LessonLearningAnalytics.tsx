@@ -155,8 +155,8 @@ export const LessonLearningAnalytics: React.FC<LessonLearningAnalyticsProps> = (
   } | null>(null);
   const [expandedAttemptId, setExpandedAttemptId] = useState<string | null>(null);
 
-  const loadLiveRecords = async () => {
-    setIsLoading(true);
+  const loadLiveRecords = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     setRecordsError(null);
     try {
       const serverRecords = await apiService.getAttempts({ schoolName: 'all' }, currentUser, true);
@@ -170,23 +170,39 @@ export const LessonLearningAnalytics: React.FC<LessonLearningAnalyticsProps> = (
       setLastSyncedAt(Date.now());
     } catch (err: any) {
       console.error('Error loading live server attempts:', err);
-      setRecords([]);
+      if (!silent) setRecords([]);
       setRecordsError(
         err?.message ||
           (isEn
-            ? 'Failed to load server learning analytics. Please verify teacher login and try again.'
-            : 'Không thể tải dữ liệu thống kê từ máy chủ. Vui lòng kiểm tra phiên đăng nhập Giáo viên và thử lại.')
+            ? 'Failed to load learning analytics. Please verify teacher login and try again.'
+            : 'Không thể tải dữ liệu thống kê. Vui lòng kiểm tra phiên đăng nhập Giáo viên và thử lại.')
       );
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadLiveRecords();
+    loadLiveRecords(false);
   }, [currentUser.id]);
 
-  // Fetch Frequently Missed Questions directly from server API whenever filters change
+  // Live subscription so new student attempts update without remounting or losing filters
+  useEffect(() => {
+    let timer: number | null = null;
+    const unsub = apiService.subscribeToDataChanges(() => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        loadLiveRecords(true);
+        setMissedRefreshKey((k) => k + 1);
+      }, 250);
+    });
+    return () => {
+      unsub();
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [currentUser.id]);
+
+  // Fetch Frequently Missed Questions whenever filters or live data change
   useEffect(() => {
     let cancelled = false;
     const effectiveLessonId =
@@ -196,7 +212,7 @@ export const LessonLearningAnalytics: React.FC<LessonLearningAnalyticsProps> = (
         ? missedLessonFilter
         : 'all';
 
-    setMissedLoading(true);
+    if (!missedApiData) setMissedLoading(true);
     setMissedError(null);
 
     apiService
@@ -1008,7 +1024,7 @@ export const LessonLearningAnalytics: React.FC<LessonLearningAnalyticsProps> = (
             </div>
           </div>
           <button
-            onClick={loadLiveRecords}
+            onClick={() => loadLiveRecords(false)}
             className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shrink-0 transition cursor-pointer"
           >
             {isEn ? 'Retry' : 'Thử lại'}
@@ -2009,13 +2025,32 @@ export const LessonLearningAnalytics: React.FC<LessonLearningAnalyticsProps> = (
                       className="w-full p-4 bg-slate-50/70 hover:bg-slate-100/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left transition cursor-pointer"
                     >
                       <div className="space-y-0.5">
-                        <div className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                        <div className="font-bold text-sm text-slate-900 flex flex-wrap items-center gap-2">
                           <span>
                             {isEn ? `Attempt #${attemptNum}` : `Lần làm thứ ${attemptNum}`}
                           </span>
                           <span className="text-xs font-normal text-slate-500 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {formatVNDateTime(new Date(att.timestamp).toISOString(), language)}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              apiService.isAttemptSyncedToCloud(att.id)
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : apiService.isAttemptPending(att.id)
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            {apiService.isAttemptSyncedToCloud(att.id)
+                              ? 'Firebase'
+                              : apiService.isAttemptPending(att.id)
+                              ? isEn
+                                ? 'Pending on device'
+                                : 'Đang chờ trên máy'
+                              : isEn
+                              ? 'Device cache'
+                              : 'Lưu cục bộ'}
                           </span>
                         </div>
                         <div className="text-xs font-mono tabular-nums text-slate-600">

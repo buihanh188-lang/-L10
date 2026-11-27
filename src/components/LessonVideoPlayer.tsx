@@ -134,14 +134,14 @@ export const LessonVideoPlayer: React.FC<LessonVideoPlayerProps> = ({
       .catch(() => {});
   };
 
-  // For embedded iframe videos (YouTube / Google Drive), record a view when student stays on the video player
+  // For embedded iframe videos (YouTube / Google Drive), record a view when student opens the video player
   useEffect(() => {
     if (!available || !videoMeta || videoMeta.playbackType !== 'iframe') return;
     const timer = window.setTimeout(() => {
       recordCloudVideoView();
-    }, 4000);
+    }, 1200);
     return () => window.clearTimeout(timer);
-  }, [available, videoMeta?.playbackType, videoMeta?.videoUrl, lessonId]);
+  }, [available, videoMeta?.playbackType, videoMeta?.videoUrl, lessonId, currentUser?.id]);
 
   const recordWatchStart = () => {
     recordCloudVideoView();
@@ -264,6 +264,7 @@ export const LessonVideoPlayer: React.FC<LessonVideoPlayerProps> = ({
                 className="w-full h-full border-0"
                 allow="autoplay; fullscreen; picture-in-picture"
                 allowFullScreen
+                onLoad={recordCloudVideoView}
               />
             ) : (
               <video

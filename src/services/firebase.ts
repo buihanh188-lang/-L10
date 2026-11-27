@@ -144,12 +144,14 @@ let pendingAnonSignIn: Promise<{
   user: FirebaseUser | null;
   needsConsoleEnable?: boolean;
   errorCode?: string;
+  errorMessage?: string;
 }> | null = null;
 
 export async function ensureAnonymousStudentSession(): Promise<{
   user: FirebaseUser | null;
   needsConsoleEnable?: boolean;
   errorCode?: string;
+  errorMessage?: string;
 }> {
   try {
     await auth.authStateReady();
@@ -167,15 +169,19 @@ export async function ensureAnonymousStudentSession(): Promise<{
 
   pendingAnonSignIn = (async () => {
     try {
+      await setPersistence(auth, browserLocalPersistence).catch(() => {});
       const cred = await signInAnonymously(auth);
       return { user: cred.user };
     } catch (err: any) {
-      const code = String(err?.code || err?.message || '');
+      const code = String(err?.code || '');
+      const message = String(err?.message || code || 'Anonymous auth failed');
       const needsConsoleEnable =
         code.includes('admin-restricted-operation') ||
-        code.includes('operation-not-allowed');
-      console.warn('Silent student Firebase session notice:', code);
-      return { user: null, needsConsoleEnable, errorCode: code };
+        code.includes('operation-not-allowed') ||
+        message.includes('admin-restricted-operation') ||
+        message.includes('operation-not-allowed');
+      console.warn('Silent student Firebase session notice:', code || message);
+      return { user: null, needsConsoleEnable, errorCode: code || 'auth/error', errorMessage: message };
     } finally {
       pendingAnonSignIn = null;
     }
@@ -474,6 +480,70 @@ export function buildActivityCreatePayload(uid: string, activity: LearningActivi
   };
 }
 
+function buildFirestoreErrorInfo(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): FirestoreErrorInfo {
+  return {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+}
+
+function logFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): FirestoreErrorInfo {
+  const errInfo = buildFirestoreErrorInfo(error, operationType, path);
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return errInfo;
+}
+
+export interface CloudSyncWriteResult {
+  synced: boolean;
+  attemptId: string;
+  alreadyExists?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface CloudActivityWriteResult {
+  synced: boolean;
+  activityId: string;
+  alreadyExists?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+async function ensureStudentProfileDocExists(
+  uid: string,
+  profile: Partial<UserProfile>
+): Promise<boolean> {
+  const studentRef = doc(db, 'students', uid);
+  const snap = await getDoc(studentRef);
+  if (snap.exists()) {
+    return true;
+  }
+  const createData = buildStudentProfileCreatePayload(uid, profile);
+  await setDoc(studentRef, createData);
+  return true;
+}
+
 // =========================================================================
 // FIRESTORE CRUD & REAL-TIME SYNC OPERATIONS
 // =========================================================================
@@ -490,81 +560,110 @@ export async function syncStudentProfileToCloud(profile: Partial<UserProfile>): 
     if (!snap.exists()) {
       const createData = buildStudentProfileCreatePayload(uid, profile);
       await setDoc(ref, createData);
-    } else {
+      return true;
+    }
+
+    const existingData = snap.data();
+    // Only attempt profile update if existing doc conforms to immutable ownerUid & createdAt rules
+    if (existingData && existingData.ownerUid === uid && existingData.createdAt) {
       const updateData = buildStudentProfileUpdatePayload(profile);
       await updateDoc(ref, updateData);
     }
     return true;
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, studentPath);
+    logFirestoreError(error, OperationType.WRITE, studentPath);
+    return false;
   }
 }
 
 export async function syncAttemptToCloud(
   record: ExamRecord,
   profile?: Partial<UserProfile>
-): Promise<{ synced: boolean; attemptId: string }> {
+): Promise<CloudSyncWriteResult> {
+  const safeAttemptId = sanitizeFirestoreId(record.id, 'att');
   const user = auth.currentUser;
   if (!isCloudSyncEligibleUser(user)) {
-    return { synced: false, attemptId: record.id };
+    return {
+      synced: false,
+      attemptId: safeAttemptId,
+      errorCode: 'auth/not-signed-in',
+      errorMessage: 'Chưa có phiên xác thực Firebase hợp lệ.',
+    };
   }
 
   const uid = user.uid;
-  const { safeAttemptId, payload } = buildAttemptCreatePayload(uid, record);
-  const studentRef = doc(db, 'students', uid);
+  const { payload } = buildAttemptCreatePayload(uid, { ...record, id: safeAttemptId });
   const attemptRef = doc(db, 'attempts', safeAttemptId);
   const attemptPath = `attempts/${safeAttemptId}`;
 
   try {
-    // If teacher admin is mirroring a server-captured student record into Firestore,
-    // write the attempt doc directly (rules allow isAdmin() without requiring students/{teacherUid})
+    // Never overwrite existing Firestore attempt records
+    try {
+      const existingAttempt = await getDoc(attemptRef);
+      if (existingAttempt.exists()) {
+        return { synced: true, attemptId: safeAttemptId, alreadyExists: true };
+      }
+    } catch (checkErr: any) {
+      const checkCode = String(checkErr?.code || '');
+      // If getDoc returned permission-denied for a non-teacher, the doc likely exists under another ownerUid
+      if (checkCode === 'permission-denied' && !isTeacherFirebaseUser(user)) {
+        logFirestoreError(checkErr, OperationType.GET, attemptPath);
+        return {
+          synced: false,
+          attemptId: safeAttemptId,
+          errorCode: checkCode,
+          errorMessage: 'Không thể kiểm tra bản ghi trên Firestore (permission-denied).',
+        };
+      }
+    }
+
+    // Teacher admin mirroring a local/server student record directly into Firestore
     if (isTeacherFirebaseUser(user)) {
       await setDoc(attemptRef, payload);
       return { synced: true, attemptId: safeAttemptId };
     }
 
-    const studentSnap = await getDoc(studentRef);
-    const batch = writeBatch(db);
+    const studentProfileSeed: Partial<UserProfile> = {
+      id: profile?.id || record.studentId || uid,
+      name: profile?.name || record.studentName,
+      code: profile?.code || record.studentCode,
+      className: profile?.className || record.className,
+      school: profile?.school || record.schoolName,
+      province: profile?.province || 'TỈNH LẠNG SƠN',
+      studentType: profile?.studentType,
+      joinedDate: profile?.joinedDate,
+    };
 
-    if (!studentSnap.exists()) {
-      const studentCreate = buildStudentProfileCreatePayload(uid, {
-        id: profile?.id || record.studentId || uid,
-        name: profile?.name || record.studentName,
-        code: profile?.code || record.studentCode,
-        className: profile?.className || record.className,
-        school: profile?.school || record.schoolName,
-        province: profile?.province || 'TỈNH LẠNG SƠN',
-        studentType: profile?.studentType,
-        joinedDate: profile?.joinedDate,
-      });
-      batch.set(studentRef, studentCreate);
-    } else {
-      const studentUpdate = buildStudentProfileUpdatePayload({
-        id: profile?.id || record.studentId || uid,
-        name: profile?.name || record.studentName,
-        code: profile?.code || record.studentCode,
-        className: profile?.className || record.className,
-        school: profile?.school || record.schoolName,
-        province: profile?.province || 'TỈNH LẠNG SƠN',
-        studentType: profile?.studentType,
-      });
-      batch.update(studentRef, studentUpdate);
-    }
+    // Decouple attempt creation from student profile updates:
+    // 1. Ensure students/{uid} exists (create-only if missing, NEVER update inside attempt write)
+    await ensureStudentProfileDocExists(uid, studentProfileSeed);
 
-    batch.set(attemptRef, payload);
-    await batch.commit();
+    // 2. Write attempts/{id} standalone so any later students/{uid} rule quirk can never block scoring
+    await setDoc(attemptRef, payload);
+
+    // 3. Refresh student profile metadata asynchronously (non-blocking)
+    syncStudentProfileToCloud(studentProfileSeed).catch(() => false);
+
     return { synced: true, attemptId: safeAttemptId };
-  } catch (error) {
-    // Idempotency check: if this attempt already exists and belongs to this user or admin, treat as synced
+  } catch (error: any) {
+    // Idempotency check: if write actually landed on Firestore, treat as synced without overwriting
     try {
       const existingAttempt = await getDoc(attemptRef);
       if (existingAttempt.exists()) {
-        return { synced: true, attemptId: safeAttemptId };
+        return { synced: true, attemptId: safeAttemptId, alreadyExists: true };
       }
     } catch {
-      // fall through to primary error handler
+      // keep primary error below
     }
-    handleFirestoreError(error, OperationType.CREATE, attemptPath);
+
+    const info = logFirestoreError(error, OperationType.CREATE, attemptPath);
+    const errorCode = String(error?.code || 'firestore/write-failed');
+    return {
+      synced: false,
+      attemptId: safeAttemptId,
+      errorCode,
+      errorMessage: info.error,
+    };
   }
 }
 
@@ -584,30 +683,51 @@ export async function deleteAttemptFromCloud(attemptId: string): Promise<boolean
 
 export async function syncActivityToCloud(
   activity: LearningActivity
-): Promise<{ synced: boolean; activityId: string }> {
+): Promise<CloudActivityWriteResult> {
+  const safeActivityId = sanitizeFirestoreId(activity.id, 'act');
   const user = auth.currentUser;
   if (!isCloudSyncEligibleUser(user)) {
-    return { synced: false, activityId: activity.id };
+    return {
+      synced: false,
+      activityId: safeActivityId,
+      errorCode: 'auth/not-signed-in',
+      errorMessage: 'Chưa có phiên xác thực Firebase hợp lệ.',
+    };
   }
 
   const uid = user.uid;
-  const { safeActivityId, payload } = buildActivityCreatePayload(uid, activity);
+  const { payload } = buildActivityCreatePayload(uid, { ...activity, id: safeActivityId });
   const activityRef = doc(db, 'activities', safeActivityId);
   const activityPath = `activities/${safeActivityId}`;
 
   try {
-    await setDoc(activityRef, payload);
-    return { synced: true, activityId: safeActivityId };
-  } catch (error) {
     try {
       const existing = await getDoc(activityRef);
       if (existing.exists()) {
-        return { synced: true, activityId: safeActivityId };
+        return { synced: true, activityId: safeActivityId, alreadyExists: true };
+      }
+    } catch {
+      // proceed to create
+    }
+
+    await setDoc(activityRef, payload);
+    return { synced: true, activityId: safeActivityId };
+  } catch (error: any) {
+    try {
+      const existing = await getDoc(activityRef);
+      if (existing.exists()) {
+        return { synced: true, activityId: safeActivityId, alreadyExists: true };
       }
     } catch {
       // ignore
     }
-    handleFirestoreError(error, OperationType.CREATE, activityPath);
+    const info = logFirestoreError(error, OperationType.CREATE, activityPath);
+    return {
+      synced: false,
+      activityId: safeActivityId,
+      errorCode: String(error?.code || 'firestore/write-failed'),
+      errorMessage: info.error,
+    };
   }
 }
 
@@ -627,7 +747,7 @@ export async function mirrorRecordsToFirestoreAsTeacher(params: {
 
   const missingAttempts = params.attempts
     .filter((a) => a && a.id && !params.knownCloudAttemptIds.has(sanitizeFirestoreId(a.id, 'att')))
-    .slice(0, 25);
+    .slice(0, 50);
 
   for (const att of missingAttempts) {
     try {
@@ -643,7 +763,7 @@ export async function mirrorRecordsToFirestoreAsTeacher(params: {
 
   const missingActivities = params.activities
     .filter((a) => a && a.id && !params.knownCloudActivityIds.has(sanitizeFirestoreId(a.id, 'act')))
-    .slice(0, 35);
+    .slice(0, 80);
 
   for (const act of missingActivities) {
     try {
@@ -660,81 +780,112 @@ export async function mirrorRecordsToFirestoreAsTeacher(params: {
   return { mirroredAttempts, mirroredActivities };
 }
 
-function docToExamRecord(data: Record<string, any>): ExamRecord {
-  return {
-    id: String(data.id || ''),
-    studentId: String(data.studentId || data.ownerUid || ''),
-    studentName: String(data.studentName || 'Học sinh'),
-    studentCode: String(data.studentCode || 'HS'),
-    schoolName: String(data.schoolName || 'TRƯỜNG THPT HÒA BÌNH'),
-    className: String(data.className || '10A1'),
-    lessonId: data.lessonId || undefined,
-    chapterId: data.chapterId || null,
-    lessonTitle: data.lessonTitle || undefined,
-    questionType: data.questionType || 'all',
-    title: String(data.title || 'Bài luyện tập Địa lí 10'),
-    mode: data.mode || 'practice_topic',
-    timestamp: Number(data.timestamp) || Date.now(),
-    date: data.date || new Date(Number(data.timestamp) || Date.now()).toLocaleDateString('vi-VN'),
-    durationSeconds: Number(data.durationSeconds) || 0,
-    timeLimitMinutes: Number(data.timeLimitMinutes) || undefined,
-    totalQuestions: Number(data.totalQuestions) || 0,
-    answeredCount: Number(data.answeredCount) || 0,
-    unansweredCount: Number(data.unansweredCount) || 0,
-    score: Number(data.score) || 0,
-    correctCount: Number(data.correctCount) || 0,
-    wrongCount: Number(data.wrongCount) || 0,
-    accuracyRate: Number(data.accuracyRate) || 0,
-    language: data.language === 'en' ? 'en' : 'vi',
-    details: Array.isArray(data.details) ? (data.details as QuestionGradingDetail[]) : [],
-    topicBreakdown: (data.topicBreakdown && typeof data.topicBreakdown === 'object'
-      ? data.topicBreakdown
-      : {}) as ExamRecord['topicBreakdown'],
-    typeBreakdown: (data.typeBreakdown && typeof data.typeBreakdown === 'object'
-      ? data.typeBreakdown
-      : {}) as ExamRecord['typeBreakdown'],
-    weakTopics: Array.isArray(data.weakTopics) ? data.weakTopics : [],
-    strongTopics: Array.isArray(data.strongTopics) ? data.strongTopics : [],
-    recommendation: String(data.recommendation || ''),
-  };
+function safeParseExamRecord(docId: string, data: Record<string, any> | undefined): ExamRecord | null {
+  try {
+    if (!data || typeof data !== 'object') return null;
+    const rawTs = Number(data.timestamp);
+    const ts = Number.isFinite(rawTs) && rawTs > 0 ? rawTs : Date.now();
+    return {
+      id: String(data.id || docId || ''),
+      studentId: String(data.studentId || data.ownerUid || ''),
+      studentName: String(data.studentName || 'Học sinh'),
+      studentCode: String(data.studentCode || 'HS'),
+      schoolName: String(data.schoolName || 'TRƯỜNG THPT HÒA BÌNH'),
+      className: String(data.className || '10A1'),
+      lessonId: data.lessonId ? String(data.lessonId) : undefined,
+      chapterId: data.chapterId ? String(data.chapterId) : null,
+      lessonTitle: data.lessonTitle ? String(data.lessonTitle) : undefined,
+      questionType: data.questionType || 'all',
+      title: String(data.title || 'Bài luyện tập Địa lí 10'),
+      mode: data.mode || 'practice_topic',
+      timestamp: ts,
+      date: String(data.date || new Date(ts).toLocaleDateString('vi-VN')),
+      durationSeconds: Number(data.durationSeconds) || 0,
+      timeLimitMinutes: data.timeLimitMinutes ? Number(data.timeLimitMinutes) : undefined,
+      totalQuestions: Number(data.totalQuestions) || 0,
+      answeredCount: Number(data.answeredCount) || 0,
+      unansweredCount: Number(data.unansweredCount) || 0,
+      score: Number(data.score) || 0,
+      correctCount: Number(data.correctCount) || 0,
+      wrongCount: Number(data.wrongCount) || 0,
+      accuracyRate: Number(data.accuracyRate) || 0,
+      language: data.language === 'en' ? 'en' : 'vi',
+      details: Array.isArray(data.details) ? (data.details as QuestionGradingDetail[]) : [],
+      topicBreakdown:
+        data.topicBreakdown && typeof data.topicBreakdown === 'object'
+          ? (data.topicBreakdown as ExamRecord['topicBreakdown'])
+          : {},
+      typeBreakdown:
+        data.typeBreakdown && typeof data.typeBreakdown === 'object'
+          ? (data.typeBreakdown as ExamRecord['typeBreakdown'])
+          : {
+              multiple_choice: { total: 0, correct: 0 },
+              true_false_context: { total: 0, correct: 0 },
+              short_answer: { total: 0, correct: 0 },
+              matching: { total: 0, correct: 0 },
+            },
+      weakTopics: Array.isArray(data.weakTopics) ? data.weakTopics : [],
+      strongTopics: Array.isArray(data.strongTopics) ? data.strongTopics : [],
+      recommendation: String(data.recommendation || ''),
+    };
+  } catch (err) {
+    console.warn('Skipped malformed attempt document:', docId, err);
+    return null;
+  }
 }
 
-function docToUserProfile(docId: string, data: Record<string, any>): UserProfile {
-  return {
-    id: String(data.studentId || docId),
-    role: 'student',
-    studentType: data.studentType === 'official' ? 'official' : 'extended',
-    name: String(data.name || 'Học sinh'),
-    code: String(data.studentCode || 'HS'),
-    className: String(data.className || '10A1'),
-    school: String(data.school || 'TRƯỜNG THPT HÒA BÌNH'),
-    province: String(data.province || 'TỈNH LẠNG SƠN'),
-    joinedDate: String(data.joinedDate || new Date().toISOString().slice(0, 10)),
-    lastLoginAt: data.lastLoginAt ? String(data.lastLoginAt) : undefined,
-    isActivated: true,
-  };
+function safeParseUserProfile(docId: string, data: Record<string, any> | undefined): UserProfile | null {
+  try {
+    if (!data || typeof data !== 'object') return null;
+    return {
+      id: String(data.studentId || docId),
+      role: 'student',
+      studentType: data.studentType === 'official' ? 'official' : 'extended',
+      name: String(data.name || 'Học sinh'),
+      code: String(data.studentCode || 'HS'),
+      className: String(data.className || '10A1'),
+      school: String(data.school || 'TRƯỜNG THPT HÒA BÌNH'),
+      province: String(data.province || 'TỈNH LẠNG SƠN'),
+      joinedDate: String(data.joinedDate || new Date().toISOString().slice(0, 10)),
+      lastLoginAt: data.lastLoginAt ? String(data.lastLoginAt) : undefined,
+      isActivated: true,
+    };
+  } catch (err) {
+    console.warn('Skipped malformed student document:', docId, err);
+    return null;
+  }
 }
 
-function docToLearningActivity(data: Record<string, any>): LearningActivity {
-  const rawType = data.type;
-  const type =
-    rawType === 'video_view' || rawType === 'lesson_view' || rawType === 'visit'
-      ? rawType
-      : 'visit';
-  const ts = Number(data.timestamp) || Date.now();
-  return {
-    id: String(data.id || ''),
-    type,
-    studentId: String(data.studentId || data.ownerUid || ''),
-    studentName: String(data.studentName || 'Học sinh'),
-    studentCode: String(data.studentCode || 'HS'),
-    schoolName: String(data.schoolName || 'TRƯỜNG THPT HÒA BÌNH'),
-    className: String(data.className || '10A1'),
-    lessonId: data.lessonId ? String(data.lessonId) : undefined,
-    lessonTitle: data.lessonTitle ? String(data.lessonTitle) : undefined,
-    timestamp: ts,
-    date: String(data.date || new Date(ts).toLocaleDateString('vi-VN')),
-  };
+function safeParseLearningActivity(
+  docId: string,
+  data: Record<string, any> | undefined
+): LearningActivity | null {
+  try {
+    if (!data || typeof data !== 'object') return null;
+    const rawType = data.type;
+    const type =
+      rawType === 'video_view' || rawType === 'lesson_view' || rawType === 'visit'
+        ? rawType
+        : 'visit';
+    const rawTs = Number(data.timestamp);
+    const ts = Number.isFinite(rawTs) && rawTs > 0 ? rawTs : Date.now();
+    return {
+      id: String(data.id || docId || ''),
+      type,
+      studentId: String(data.studentId || data.ownerUid || ''),
+      studentName: String(data.studentName || 'Học sinh'),
+      studentCode: String(data.studentCode || 'HS'),
+      schoolName: String(data.schoolName || 'TRƯỜNG THPT HÒA BÌNH'),
+      className: String(data.className || '10A1'),
+      lessonId: data.lessonId ? String(data.lessonId) : undefined,
+      lessonTitle: data.lessonTitle ? String(data.lessonTitle) : undefined,
+      timestamp: ts,
+      date: String(data.date || new Date(ts).toLocaleDateString('vi-VN')),
+    };
+  } catch (err) {
+    console.warn('Skipped malformed activity document:', docId, err);
+    return null;
+  }
 }
 
 export function subscribeCloudData(
@@ -743,8 +894,9 @@ export function subscribeCloudData(
     attempts?: ExamRecord[];
     students?: UserProfile[];
     activities?: LearningActivity[];
+    collection?: 'attempts' | 'students' | 'activities';
   }) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error, collectionName?: 'attempts' | 'students' | 'activities') => void
 ): Unsubscribe {
   if (!isCloudSyncEligibleUser(user)) {
     return () => {};
@@ -761,16 +913,14 @@ export function subscribeCloudData(
     attemptsQuery,
     (snapshot) => {
       const attempts = snapshot.docs
-        .map((d) => docToExamRecord(d.data()))
+        .map((d) => safeParseExamRecord(d.id, d.data()))
+        .filter((r): r is ExamRecord => Boolean(r && r.id))
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      onUpdate({ attempts });
+      onUpdate({ attempts, collection: 'attempts' });
     },
     (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, 'attempts');
-      } catch (wrapped) {
-        if (onError && wrapped instanceof Error) onError(wrapped);
-      }
+      const info = logFirestoreError(error, OperationType.LIST, 'attempts');
+      if (onError) onError(new Error(info.error), 'attempts');
     }
   );
   unsubs.push(unsubAttempts);
@@ -783,16 +933,14 @@ export function subscribeCloudData(
     activitiesQuery,
     (snapshot) => {
       const activities = snapshot.docs
-        .map((d) => docToLearningActivity(d.data()))
+        .map((d) => safeParseLearningActivity(d.id, d.data()))
+        .filter((a): a is LearningActivity => Boolean(a && a.id))
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      onUpdate({ activities });
+      onUpdate({ activities, collection: 'activities' });
     },
     (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, 'activities');
-      } catch (wrapped) {
-        if (onError && wrapped instanceof Error) onError(wrapped);
-      }
+      const info = logFirestoreError(error, OperationType.LIST, 'activities');
+      if (onError) onError(new Error(info.error), 'activities');
     }
   );
   unsubs.push(unsubActivities);
@@ -801,15 +949,14 @@ export function subscribeCloudData(
     const unsubStudents = onSnapshot(
       collection(db, 'students'),
       (snapshot) => {
-        const students = snapshot.docs.map((d) => docToUserProfile(d.id, d.data()));
-        onUpdate({ students });
+        const students = snapshot.docs
+          .map((d) => safeParseUserProfile(d.id, d.data()))
+          .filter((s): s is UserProfile => Boolean(s && s.id));
+        onUpdate({ students, collection: 'students' });
       },
       (error) => {
-        try {
-          handleFirestoreError(error, OperationType.LIST, 'students');
-        } catch (wrapped) {
-          if (onError && wrapped instanceof Error) onError(wrapped);
-        }
+        const info = logFirestoreError(error, OperationType.LIST, 'students');
+        if (onError) onError(new Error(info.error), 'students');
       }
     );
     unsubs.push(unsubStudents);
@@ -819,15 +966,15 @@ export function subscribeCloudData(
       doc(db, 'students', user.uid),
       (snap) => {
         if (snap.exists()) {
-          onUpdate({ students: [docToUserProfile(snap.id, snap.data())] });
+          const parsed = safeParseUserProfile(snap.id, snap.data());
+          if (parsed) {
+            onUpdate({ students: [parsed], collection: 'students' });
+          }
         }
       },
       (error) => {
-        try {
-          handleFirestoreError(error, OperationType.GET, studentPath);
-        } catch (wrapped) {
-          if (onError && wrapped instanceof Error) onError(wrapped);
-        }
+        const info = logFirestoreError(error, OperationType.GET, studentPath);
+        if (onError) onError(new Error(info.error), 'students');
       }
     );
     unsubs.push(unsubSelf);
@@ -844,11 +991,23 @@ export function subscribeCloudData(
   };
 }
 
-export async function fetchCloudDataOnce(): Promise<{
+export interface FetchCloudSnapshotResult {
   attempts: ExamRecord[];
   students: UserProfile[];
   activities: LearningActivity[];
-} | null> {
+  fetched: {
+    attempts: boolean;
+    students: boolean;
+    activities: boolean;
+  };
+  errors: {
+    attempts?: string;
+    students?: string;
+    activities?: string;
+  };
+}
+
+export async function fetchCloudDataOnce(): Promise<FetchCloudSnapshotResult | null> {
   const user = auth.currentUser;
   if (!isCloudSyncEligibleUser(user)) return null;
 
@@ -856,44 +1015,69 @@ export async function fetchCloudDataOnce(): Promise<{
   let attempts: ExamRecord[] = [];
   let students: UserProfile[] = [];
   let activities: LearningActivity[] = [];
+  const fetched = { attempts: false, students: false, activities: false };
+  const errors: { attempts?: string; students?: string; activities?: string } = {};
 
-  try {
-    const attemptsQuery = isTeacher
-      ? collection(db, 'attempts')
-      : query(collection(db, 'attempts'), where('ownerUid', '==', user.uid));
-    const attSnap = await getDocs(attemptsQuery);
-    attempts = attSnap.docs
-      .map((d) => docToExamRecord(d.data()))
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'attempts');
-  }
-
-  try {
-    const activitiesQuery = isTeacher
-      ? collection(db, 'activities')
-      : query(collection(db, 'activities'), where('ownerUid', '==', user.uid));
-    const actSnap = await getDocs(activitiesQuery);
-    activities = actSnap.docs
-      .map((d) => docToLearningActivity(d.data()))
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'activities');
-  }
-
-  try {
-    if (isTeacher) {
-      const stSnap = await getDocs(collection(db, 'students'));
-      students = stSnap.docs.map((d) => docToUserProfile(d.id, d.data()));
-    } else {
-      const selfSnap = await getDoc(doc(db, 'students', user.uid));
-      if (selfSnap.exists()) {
-        students = [docToUserProfile(selfSnap.id, selfSnap.data())];
-      }
+  const attemptsTask = (async () => {
+    try {
+      const attemptsQuery = isTeacher
+        ? collection(db, 'attempts')
+        : query(collection(db, 'attempts'), where('ownerUid', '==', user.uid));
+      const attSnap = await getDocs(attemptsQuery);
+      attempts = attSnap.docs
+        .map((d) => safeParseExamRecord(d.id, d.data()))
+        .filter((r): r is ExamRecord => Boolean(r && r.id))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      fetched.attempts = true;
+    } catch (error) {
+      const info = logFirestoreError(error, OperationType.LIST, 'attempts');
+      errors.attempts = info.error;
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, isTeacher ? 'students' : `students/${user.uid}`);
-  }
+  })();
 
-  return { attempts, students, activities };
+  const activitiesTask = (async () => {
+    try {
+      const activitiesQuery = isTeacher
+        ? collection(db, 'activities')
+        : query(collection(db, 'activities'), where('ownerUid', '==', user.uid));
+      const actSnap = await getDocs(activitiesQuery);
+      activities = actSnap.docs
+        .map((d) => safeParseLearningActivity(d.id, d.data()))
+        .filter((a): a is LearningActivity => Boolean(a && a.id))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      fetched.activities = true;
+    } catch (error) {
+      const info = logFirestoreError(error, OperationType.LIST, 'activities');
+      errors.activities = info.error;
+    }
+  })();
+
+  const studentsTask = (async () => {
+    try {
+      if (isTeacher) {
+        const stSnap = await getDocs(collection(db, 'students'));
+        students = stSnap.docs
+          .map((d) => safeParseUserProfile(d.id, d.data()))
+          .filter((s): s is UserProfile => Boolean(s && s.id));
+      } else {
+        const selfSnap = await getDoc(doc(db, 'students', user.uid));
+        if (selfSnap.exists()) {
+          const parsed = safeParseUserProfile(selfSnap.id, selfSnap.data());
+          if (parsed) students = [parsed];
+        }
+      }
+      fetched.students = true;
+    } catch (error) {
+      const info = logFirestoreError(
+        error,
+        isTeacher ? OperationType.LIST : OperationType.GET,
+        isTeacher ? 'students' : `students/${user.uid}`
+      );
+      errors.students = info.error;
+    }
+  })();
+
+  await Promise.allSettled([attemptsTask, activitiesTask, studentsTask]);
+
+  return { attempts, students, activities, fetched, errors };
 }

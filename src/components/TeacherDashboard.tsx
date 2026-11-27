@@ -64,6 +64,7 @@ import { ZaloScoreAggregator } from './ZaloScoreAggregator';
 import { useLanguage } from '../contexts/LanguageContext';
 import { localizeExamTitle, localizeQuestion, localizeTeacherHistoryReason } from '../services/bilingualQuestions';
 import { getLocalizedChapter, getLocalizedLesson, getLocalizedTopic } from '../data/bilingualCurriculum';
+import { normalizeClassName, normalizeSchoolKey } from '../utils/normalize';
 
 interface TeacherDashboardProps {
   questions: Question[];
@@ -230,21 +231,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [newClassName, setNewClassName] = useState('');
   const [newClassCount, setNewClassCount] = useState(38);
 
-  // Load live data from Storage
-  const allRecords = StorageService.getExamRecords();
-  const allStudents = StorageService.getStudents();
+  // Load live unified data (Firestore Cloud + Device Pending + Local Backup)
+  const allRecords = apiService.getAttemptsSnapshot();
+  const allStudents = apiService.getAllStudents();
   const storedClasses = StorageService.getClasses();
   // Dynamically include every class that exists in records or students
   const dynamicClassNames = Array.from(
     new Set([
-      ...storedClasses.map((c) => c.name),
-      ...allStudents.map((s) => s.className).filter(Boolean) as string[],
-      ...allRecords.map((r) => r.className).filter(Boolean) as string[],
+      ...storedClasses.map((c) => normalizeClassName(c.name)),
+      ...allStudents.map((s) => normalizeClassName(s.className || '')).filter(Boolean),
+      ...allRecords.map((r) => normalizeClassName(r.className || '')).filter(Boolean),
     ])
   ).sort();
 
   const allClasses = dynamicClassNames.map((name) => {
-    const existing = storedClasses.find((c) => c.name === name);
+    const existing = storedClasses.find((c) => normalizeClassName(c.name) === name);
     if (existing) return existing;
     return {
       id: `class-${name}`,
@@ -252,7 +253,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       schoolName: 'THPT Hòa Bình',
       teacherName: 'Bùi Thị Hồng Hạnh',
       joinCode: `HB${name.toUpperCase().replace(/\s+/g, '')}`,
-      studentCount: allStudents.filter((s) => s.className === name).length || 1,
+      studentCount: allStudents.filter((s) => normalizeClassName(s.className || '') === name).length || 1,
       academicYear: '2025-2026',
     };
   });
@@ -293,16 +294,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const tierAverage = filteredRecords.filter((r) => r.score >= 5.0 && r.score < 6.5).length; // Trung bình
   const tierWeak = filteredRecords.filter((r) => r.score < 5.0).length; // Chưa đạt
 
-  // Students table data computed from records
+  // Students table data computed from live records (collision-safe key & accurate newest score)
+  const makeRowKey = (school: string, className: string, code: string, name: string) => {
+    const sKey = normalizeSchoolKey(school || 'TRƯỜNG THPT HÒA BÌNH');
+    const cKey = normalizeClassName(className || '10A1');
+    const cleanCode = String(code || '').trim().toUpperCase();
+    const idToken = cleanCode && cleanCode !== 'HS' ? `C:${cleanCode}` : `N:${name.trim().toLowerCase()}`;
+    return `${sKey}::${cKey}::${idToken}`;
+  };
+
   const studentTableMap: {
-    [code: string]: {
+    [key: string]: {
+      key: string;
       name: string;
       code: string;
       school: string;
       className: string;
       attempts: number;
+      syncedAttempts: number;
+      pendingAttempts: number;
       scores: number[];
       recentScore: number | null;
+      latestTimestamp: number;
       highestScore: number | null;
       practiceCount: number;
       examCount: number;
@@ -313,14 +326,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   } = {};
 
   allStudents.forEach((std) => {
-    studentTableMap[std.code] = {
+    const school = std.school || (isEn ? 'Hoa Binh High School' : 'THPT Hòa Bình');
+    const className = normalizeClassName(std.className || (isEn ? 'Unassigned' : 'Chưa phân lớp'));
+    const key = makeRowKey(school, className, std.code, std.name);
+    studentTableMap[key] = {
+      key,
       name: std.name,
       code: std.code,
-      school: std.school || (isEn ? 'Hoa Binh High School' : 'THPT Hòa Bình'),
-      className: std.className || (isEn ? 'Unassigned' : 'Chưa phân lớp'),
+      school,
+      className,
       attempts: 0,
+      syncedAttempts: 0,
+      pendingAttempts: 0,
       scores: [],
       recentScore: null,
+      latestTimestamp: 0,
       highestScore: null,
       practiceCount: 0,
       examCount: 0,
@@ -331,15 +351,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   });
 
   filteredRecords.forEach((r) => {
-    if (!studentTableMap[r.studentCode]) {
-      studentTableMap[r.studentCode] = {
+    const school = r.schoolName || (isEn ? 'Hoa Binh High School' : 'THPT Hòa Bình');
+    const className = normalizeClassName(r.className || (isEn ? 'Unassigned' : 'Chưa phân lớp'));
+    const key = makeRowKey(school, className, r.studentCode, r.studentName);
+    if (!studentTableMap[key]) {
+      studentTableMap[key] = {
+        key,
         name: r.studentName,
         code: r.studentCode,
-        school: r.schoolName || (isEn ? 'Hoa Binh High School' : 'THPT Hòa Bình'),
-        className: r.className || (isEn ? 'Unassigned' : 'Chưa phân lớp'),
+        school,
+        className,
         attempts: 0,
+        syncedAttempts: 0,
+        pendingAttempts: 0,
         scores: [],
         recentScore: null,
+        latestTimestamp: 0,
         highestScore: null,
         practiceCount: 0,
         examCount: 0,
@@ -348,8 +375,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         lastDate: r.date || '',
       };
     }
-    const item = studentTableMap[r.studentCode];
+    const item = studentTableMap[key];
     item.attempts += 1;
+    if (apiService.isAttemptSyncedToCloud(r.id)) {
+      item.syncedAttempts += 1;
+    } else if (apiService.isAttemptPending(r.id)) {
+      item.pendingAttempts += 1;
+    }
     item.scores.push(r.score);
     if (r.mode === 'official_test') {
       item.examCount += 1;
@@ -361,13 +393,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     if (item.highestScore === null || r.score > item.highestScore) {
       item.highestScore = r.score;
     }
-    item.recentScore = r.score;
-    if (r.date) item.lastDate = r.date;
+    const ts = Number(r.timestamp) || 0;
+    if (item.recentScore === null || ts >= item.latestTimestamp) {
+      item.latestTimestamp = ts;
+      item.recentScore = r.score;
+      if (r.date) item.lastDate = r.date;
+    }
   });
 
   const studentTableRows = Object.values(studentTableMap)
     .filter((s) => {
-      if (selectedClass !== 'all' && s.className !== selectedClass) return false;
+      if (selectedClass !== 'all' && normalizeClassName(s.className) !== normalizeClassName(selectedClass)) return false;
       if (studentSearch.trim()) {
         const q = studentSearch.toLowerCase();
         return (
@@ -379,7 +415,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       }
       return true;
     })
-    .sort((a, b) => b.attempts - a.attempts);
+    .sort((a, b) => b.attempts - a.attempts || b.latestTimestamp - a.latestTimestamp);
 
   // Type Breakdown across class
   const classTypeStats: { [k in QuestionType]: { total: number; correct: number } } = {
@@ -769,21 +805,48 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div className="font-extrabold text-emerald-900 flex flex-wrap items-center gap-2">
                 <span>
                   {isEn
-                    ? 'Auto-Sync Active (Server + Firebase Cloud) — Live Student Scores & Visits'
-                    : 'Đã kết nối Tự Động (Server + Firebase Cloud) — Điểm & lượt học tự động đổ về trực tiếp'}
+                    ? 'Firebase Firestore Live Sync Active — Real-Time Student Scores & Visits'
+                    : 'Đã kết nối Firebase Firestore Trực Tiếp — Điểm & lượt học tự động đổ về thời gian thực'}
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[11px] font-bold">
-                  {cloudStatus.cloudAttemptCount} {isEn ? 'synced submissions' : 'bài đã đồng bộ'}
+                  {cloudStatus.cloudAttemptCount} {isEn ? 'Firestore attempts' : 'bài trên Firebase'}
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-sky-600 text-white text-[11px] font-bold">
                   {cloudStatus.cloudActivityCount} {isEn ? 'learning visits' : 'lượt học & xem'}
                 </span>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[11px] font-bold">
+                  {cloudStatus.cloudStudentCount} {isEn ? 'students' : 'hồ sơ HS'}
+                </span>
+                {cloudStatus.pendingCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[11px] font-bold">
+                    {cloudStatus.pendingCount} {isEn ? 'pending on device' : 'đang chờ đồng bộ'}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-emerald-800/90 mt-0.5">
                 {isEn
-                  ? `Signed in as ${cloudStatus.email}. All student quiz scores, app visits, lesson views, and video views sync automatically here.`
-                  : `Tài khoản giáo viên: ${cloudStatus.email}. Học sinh vào học, xem bài/video hoặc nộp bài trên điện thoại là dữ liệu tự động đổ thẳng về đây, không cần bấm thao tác gì thêm.`}
+                  ? `Signed in as ${cloudStatus.email}. All student quiz scores, app visits, lesson views, and video views update live without reloading.`
+                  : `Tài khoản giáo viên: ${cloudStatus.email}. Học sinh nộp bài, vào app, xem bài hoặc xem video từ bất kì thiết bị nào đều tự động cập nhật trực tiếp tại đây không cần tải lại trang.`}
               </p>
+              {(cloudStatus.lastError ||
+                cloudStatus.collectionErrors?.attempts ||
+                cloudStatus.collectionErrors?.activities ||
+                cloudStatus.collectionErrors?.students) && (
+                <p className="text-[11px] font-bold text-rose-700 mt-1">
+                  {isEn ? 'Cloud collection notice: ' : 'Cảnh báo từng phần đồng bộ: '}
+                  {[
+                    cloudStatus.collectionErrors?.attempts && `attempts: ${cloudStatus.collectionErrors.attempts}`,
+                    cloudStatus.collectionErrors?.activities && `activities: ${cloudStatus.collectionErrors.activities}`,
+                    cloudStatus.collectionErrors?.students && `students: ${cloudStatus.collectionErrors.students}`,
+                    !cloudStatus.collectionErrors?.attempts &&
+                      !cloudStatus.collectionErrors?.activities &&
+                      !cloudStatus.collectionErrors?.students &&
+                      cloudStatus.lastError,
+                  ]
+                    .filter(Boolean)
+                    .join(' | ')}
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -994,21 +1057,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       {/* SUB-TAB 0: TRUNG TÂM THỐNG KÊ 4 KHU VỰC & BÁO CÁO SKKN */}
       {/* ============================================================ */}
       {activeTab === 'multi_school' && (
-        <MultiSchoolStats key={`ms-${dataVersion}`} currentUser={currentUser} />
+        <MultiSchoolStats currentUser={currentUser} />
       )}
 
       {/* ============================================================ */}
       {/* SUB-TAB 0.5: THỐNG KÊ HỌC TẬP THEO TỪNG BÀI (40 BÀI HỌC)     */}
       {/* ============================================================ */}
       {activeTab === 'lesson_analytics' && (
-        <LessonLearningAnalytics key={`la-${dataVersion}`} questions={questions} currentUser={currentUser} />
+        <LessonLearningAnalytics questions={questions} currentUser={currentUser} />
       )}
 
       {/* ============================================================ */}
       {/* SUB-TAB 0.6: THỐNG KÊ TRUY CẬP HỌC TẬP & XEM VIDEO BÀI GIẢNG */}
       {/* ============================================================ */}
       {activeTab === 'engagement' && (
-        <LearningEngagementPanel key={`eng-${dataVersion}`} />
+        <LearningEngagementPanel />
       )}
 
       {/* ============================================================ */}
@@ -1412,7 +1475,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             };
 
                       return (
-                        <tr key={s.code} className="hover:bg-slate-50/60">
+                        <tr key={s.key} className="hover:bg-slate-50/60">
                           <td className="p-3 text-center font-bold text-slate-500">{idx + 1}</td>
                           <td className="p-3 font-mono font-semibold text-blue-700">{s.code}</td>
                           <td className="p-3 font-bold text-slate-900">{s.name}</td>
@@ -1428,7 +1491,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             </span>
                           </td>
                           <td className="p-3 text-center font-bold">
-                            {s.attempts} {isEn ? 'attempts' : 'lượt'}
+                            <div>{s.attempts} {isEn ? 'attempts' : 'lượt'}</div>
+                            {s.pendingAttempts > 0 && (
+                              <div className="text-[10px] font-semibold text-amber-700">
+                                {s.pendingAttempts} {isEn ? 'pending on device' : 'chờ trên máy'}
+                              </div>
+                            )}
                           </td>
                           <td className="p-3 text-center font-bold text-blue-600">{recent}</td>
                           <td className="p-3 text-center font-bold text-amber-600">
@@ -1437,12 +1505,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                           <td className="p-3 text-center font-bold text-emerald-600">
                             {s.scores.length > 0 ? `${avg} ${isEn ? 'pts' : 'đ'}` : '-'}
                           </td>
-                          <td className="p-3 text-center">
+                          <td className="p-3 text-center space-y-1">
                             <span
                               className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${status.color}`}
                             >
                               {status.label}
                             </span>
+                            {s.syncedAttempts > 0 && (
+                              <div className="text-[10px] font-semibold text-emerald-700">
+                                Firebase: {s.syncedAttempts}/{s.attempts}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -2152,13 +2225,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <div>
                 <h2 className="text-xl font-bold">
                   {isEn
-                    ? 'Automatic Dual-Sync (Server + Firebase Cloud)'
-                    : 'Đồng Bộ Tự Động Kép (Máy Chủ + Firebase Cloud)'}
+                    ? 'Firebase Firestore Live Sync & Offline Backup'
+                    : 'Đồng Bộ Trực Tiếp Firebase Firestore & Dự Phòng Offline'}
                 </h2>
                 <p className="text-xs text-slate-500">
                   {isEn
-                    ? 'Automatic zero-click syncing of scores, visits, lesson views, and video views across all student devices'
-                    : 'Tự động thu nhận điểm bài làm và lượt vào học/xem video từ mọi thiết bị học sinh về Trang quản trị'}
+                    ? 'Real-time syncing of student submissions, visits, lesson views, and video views directly via Firebase Firestore'
+                    : 'Thu nhận trực tiếp điểm bài làm và lượt vào học/xem video từ mọi thiết bị học sinh qua Firebase Firestore'}
                 </p>
               </div>
             </div>
@@ -2200,8 +2273,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>
                   {isEn
-                    ? 'Status: Automatic Dual-Sync Active (Server + Firebase Cloud)'
-                    : 'Trạng thái hiện tại: Đang hoạt động Tự Động hoàn toàn (Server + Firebase Cloud)'}
+                    ? 'Status: Firebase Firestore Live Sync Active'
+                    : 'Trạng thái hiện tại: Đang đồng bộ trực tiếp với Firebase Firestore'}
                 </span>
               </div>
               <p className="text-emerald-900/90">
@@ -2209,6 +2282,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   ? `Teacher account: ${cloudStatus.email}. Synced ${cloudStatus.cloudAttemptCount} submissions, ${cloudStatus.cloudActivityCount} learning/video visits, and ${cloudStatus.cloudStudentCount} student profiles.`
                   : `Tài khoản giáo viên: ${cloudStatus.email}. Đã đồng bộ trực tiếp ${cloudStatus.cloudAttemptCount} bài làm, ${cloudStatus.cloudActivityCount} lượt vào app / xem bài / xem video và ${cloudStatus.cloudStudentCount} hồ sơ học sinh.`}
               </p>
+              {(cloudStatus.pendingCount > 0 || cloudStatus.pendingActivityCount > 0) && (
+                <p className="text-amber-800 font-semibold">
+                  {isEn
+                    ? `Local device queue waiting: ${cloudStatus.pendingCount} attempts, ${cloudStatus.pendingActivityCount} activities.`
+                    : `Hàng đợi cục bộ trên thiết bị này: ${cloudStatus.pendingCount} bài làm, ${cloudStatus.pendingActivityCount} hoạt động đang chờ gửi.`}
+                </p>
+              )}
             </div>
           ) : (
             <div className="p-5 rounded-2xl bg-amber-50 border border-amber-300 text-xs leading-relaxed space-y-2">
@@ -2233,13 +2313,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-xs text-blue-950 space-y-2 leading-relaxed">
             <div className="font-extrabold text-blue-900">
               {isEn
-                ? 'Zero-Click Automatic Sync Mode:'
-                : 'Cơ chế Tự Động Đồng Bộ 100% (Không cần học sinh hay giáo viên bấm thêm gì):'}
+                ? 'Zero-Click Automatic Firestore Sync & Legacy Backfill:'
+                : 'Cơ chế Tự Động Đồng Bộ Trực Tiếp & Khôi Phục Dữ Liệu Cũ:'}
             </div>
             <p className="text-blue-900/90">
               {isEn
-                ? 'Students only log in with their Student Code or Full Name/Class. Every app visit, lesson view, video lecture view, and quiz submission is automatically pushed to the backend server and mirrored into Firebase Cloud for Teacher Admin.'
-                : 'Học sinh chỉ cần vào link ứng dụng bằng Mã học sinh hoặc Họ tên/Lớp như bình thường. Mọi lượt truy cập app, lượt xem bài học, lượt xem video và điểm bài làm đều tự động gửi thẳng về máy chủ hệ thống và sao lưu kép lên Firebase Cloud cho cô theo dõi liên tục.'}
+                ? 'When students open the app or submit an exam, data writes directly to Firebase Firestore (gen-lang-client-0394460331). Any legacy offline attempts stored on the student device are automatically scanned and backfilled without duplicates.'
+                : 'Ngay khi học sinh mở ứng dụng hoặc bấm Nộp bài, dữ liệu được ghi trực tiếp lên Firebase Firestore (gen-lang-client-0394460331) mà không cần bấm nút Đồng bộ. Toàn bộ bài làm cũ còn nằm trên máy học sinh cũng tự động được quét và đồng bộ bù không trùng lặp.'}
             </p>
           </div>
 

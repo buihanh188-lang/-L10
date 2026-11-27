@@ -45,7 +45,7 @@ export const StudentStats: React.FC<StudentStatsProps> = ({
     return apiService.subscribeToDataChanges(() => setSyncTick((n) => n + 1));
   }, []);
 
-  const allRecords = StorageService.getStudentRecords(currentUser.id);
+  const allRecords = apiService.getStudentAttemptsSnapshot(currentUser.id);
 
   const handleCopyHistorySlip = async (rec: ExamRecord) => {
     const ok = await copyTextToClipboard(formatResultSlip(rec));
@@ -426,7 +426,7 @@ export const StudentStats: React.FC<StudentStatsProps> = ({
             </span>
           </h2>
           <span className="text-xs text-slate-400">
-            {isEn ? 'Saved on device' : 'Lưu trữ trên thiết bị'}
+            {isEn ? 'Synced & saved on device' : 'Đồng bộ Firebase & Lưu trên máy'}
           </span>
         </div>
 
@@ -444,7 +444,7 @@ export const StudentStats: React.FC<StudentStatsProps> = ({
                 className="p-4 rounded-2xl border border-slate-200 hover:border-blue-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white hover:bg-slate-50/50"
               >
                 <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         rec.mode === 'official_test'
@@ -459,6 +459,27 @@ export const StudentStats: React.FC<StudentStatsProps> = ({
                         {rec.language === 'en' ? '🇬🇧 EN' : '🇻🇳 VI'}
                       </span>
                     )}
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                        apiService.isAttemptSyncedToCloud(rec.id)
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : apiService.isAttemptPending(rec.id)
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      {apiService.isAttemptSyncedToCloud(rec.id)
+                        ? isEn
+                          ? 'Synced to Cloud'
+                          : 'Đã đồng bộ Firebase'
+                        : apiService.isAttemptPending(rec.id)
+                        ? isEn
+                          ? 'Pending Sync'
+                          : 'Đang chờ đồng bộ'
+                        : isEn
+                        ? 'Saved on Device'
+                        : 'Lưu trên máy'}
+                    </span>
                     <h3 className="text-sm font-bold text-slate-900">{localizeExamTitle(rec.title, language)}</h3>
                   </div>
                   <div className="text-xs text-slate-500 flex items-center gap-2">

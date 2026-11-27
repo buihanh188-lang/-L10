@@ -122,15 +122,22 @@ function AppContent() {
         unsubCloud = subscribeCloudData(
           fbUser,
           (payload) => {
+            apiService.setCloudSyncError(null, payload.collection);
             apiService.setCloudSyncData(payload);
           },
-          (err) => {
-            console.warn('Firestore live listener notice:', err.message);
+          (err, collectionName) => {
+            apiService.setCloudSyncError(err.message, collectionName);
+            console.warn('Firestore live listener notice:', collectionName, err.message);
           }
         );
-        // Automatically flush any queued offline student attempts & learning activities
-        apiService.flushPendingAttempts(StorageService.getCurrentUser() || undefined).catch(() => {});
-        apiService.flushPendingActivities().catch(() => {});
+        // Automatically recover device history & flush any queued offline student attempts & learning activities
+        const activeOnAuth = StorageService.getCurrentUser();
+        if (activeOnAuth?.role === 'student') {
+          apiService.syncStudentDeviceHistoryToServer(activeOnAuth).catch(() => {});
+        } else {
+          apiService.flushPendingAttempts(activeOnAuth || undefined).catch(() => {});
+          apiService.flushPendingActivities().catch(() => {});
+        }
       } else {
         apiService.stopTeacherAutoSync();
         apiService.setCloudAuthContext(null);
@@ -144,26 +151,49 @@ function AppContent() {
     };
   }, []);
 
-  // Automatically sync active student's profile, pending queue, and prior local history to server + Firebase
+  // Automatically sync active student's profile, pending queue, and prior local history to Firebase Firestore
   // and silently record 1 learning visit per browser session for private teacher analytics
   React.useEffect(() => {
+    let cancelled = false;
+    const triggerStudentSync = async (user: UserProfile) => {
+      if (!user || user.role !== 'student') return;
+      try {
+        await ensureAnonymousStudentSession().catch(() => null);
+        if (cancelled) return;
+        await apiService.syncStudentDeviceHistoryToServer(user).catch(() => {});
+        if (cancelled) return;
+        await apiService.recordLearningActivity({ type: 'visit' }, user).catch(() => false);
+      } catch {
+        // non-blocking
+      }
+    };
+
     if (currentUser?.role === 'student') {
-      apiService.recordLearningActivity({ type: 'visit' }, currentUser).catch(() => {});
-      apiService.syncStudentDeviceHistoryToServer(currentUser).catch(() => {});
-      ensureAnonymousStudentSession().catch(() => {});
+      triggerStudentSync(currentUser);
+      apiService.startStudentAutoSync(() => StorageService.getCurrentUser());
+    } else {
+      apiService.stopStudentAutoSync();
     }
-    const handleOnline = () => {
+
+    const handleResumeSync = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       const activeUser = StorageService.getCurrentUser();
       if (activeUser?.role === 'student') {
         apiService.syncStudentDeviceHistoryToServer(activeUser).catch(() => {});
+        apiService.recordLearningActivity({ type: 'visit' }, activeUser).catch(() => false);
       } else {
         apiService.flushPendingAttempts(activeUser || undefined).catch(() => {});
         apiService.flushPendingActivities().catch(() => {});
       }
     };
-    window.addEventListener('online', handleOnline);
+
+    window.addEventListener('online', handleResumeSync);
+    document.addEventListener('visibilitychange', handleResumeSync);
     return () => {
-      window.removeEventListener('online', handleOnline);
+      cancelled = true;
+      window.removeEventListener('online', handleResumeSync);
+      document.removeEventListener('visibilitychange', handleResumeSync);
+      apiService.stopStudentAutoSync();
     };
   }, [currentUser?.id, currentUser?.role]);
 
