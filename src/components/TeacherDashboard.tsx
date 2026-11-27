@@ -14,6 +14,7 @@ import {
   Clock,
   Cloud,
   Download,
+  Eye,
   FileCheck,
   FileSpreadsheet,
   FileText,
@@ -159,6 +160,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setDataVersion((v) => v + 1);
   };
 
+  const handleLoadAllOlderAttempts = async () => {
+    await apiService.loadAllOlderAttempts();
+    setCloudStatus(apiService.getCloudSyncStatus());
+    setDataVersion((v) => v + 1);
+  };
+
   const handleLoadOlderActivities = async () => {
     await apiService.loadOlderActivitiesPage();
     setCloudStatus(apiService.getCloudSyncStatus());
@@ -170,6 +177,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [studentSearch, setStudentSearch] = useState<string>('');
   const [gradebookPage, setGradebookPage] = useState<number>(1);
   const [attemptsPage, setAttemptsPage] = useState<number>(1);
+  const [selectedAttemptDetail, setSelectedAttemptDetail] = useState<ExamRecord | null>(null);
   const ANALYTICS_PAGE_SIZE = 20;
 
   // Questions management states
@@ -526,7 +534,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Export Excel (.xlsx) with Student Summary + Per-Attempt Details
+  // Export Excel (.xlsx) with Student Summary + Per-Attempt Details + Per-Question Details
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
     const summaryRows = studentTableRows.map((s, idx) => {
@@ -554,20 +562,84 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       };
     });
 
-    const attemptRows = filteredDetailAttempts.map((r, idx) => ({
-      STT: idx + 1,
-      'Mã HS': r.studentCode,
-      'Họ và Tên': r.studentName,
-      'Trường THPT': r.schoolName,
-      Lớp: r.className,
-      'Nội dung / Đề': localizeExamTitle(r.title, language),
-      Điểm: r.score,
-      'Số câu đúng': r.correctCount,
-      'Số câu sai': r.wrongCount,
-      'Tổng số câu': r.totalQuestions,
-      'Thời gian làm': formatDurationLabel(r.durationSeconds),
-      'Thời điểm nộp': formatVNDateTime(r.timestamp, language),
-    }));
+    const attemptRows = filteredDetailAttempts.map((r, idx) => {
+      const syncLabel = apiService.isAttemptSyncedToCloud(r.id)
+        ? isEn
+          ? 'Synced'
+          : 'Đã đồng bộ'
+        : apiService.isAttemptPending(r.id)
+        ? isEn
+          ? 'Queued'
+          : 'Đang chờ đồng bộ'
+        : isEn
+        ? 'Local'
+        : 'Cục bộ';
+      return {
+        STT: idx + 1,
+        'Mã HS': r.studentCode,
+        'Họ và Tên': r.studentName,
+        'Trường THPT': r.schoolName,
+        Lớp: r.className,
+        'Nội dung / Đề': localizeExamTitle(r.title, language),
+        'Hình thức': r.mode === 'official_test' ? (isEn ? 'Exam' : 'Kiểm tra') : isEn ? 'Practice' : 'Luyện tập',
+        Điểm: r.score,
+        'Số câu đúng': r.correctCount,
+        'Số câu sai': r.wrongCount,
+        'Chưa trả lời': r.unansweredCount ?? 0,
+        'Tổng số câu': r.totalQuestions,
+        'Tỉ lệ đúng (%)': r.accuracyRate ?? 0,
+        'Thời gian làm': formatDurationLabel(r.durationSeconds),
+        'Thời điểm nộp': formatVNDateTime(r.timestamp, language),
+        'Trạng thái đồng bộ': syncLabel,
+      };
+    });
+
+    const formatTypeLabel = (type: QuestionType) => {
+      if (type === 'multiple_choice') return isEn ? 'Multiple Choice' : 'Trắc nghiệm 4 chọn';
+      if (type === 'true_false_context') return isEn ? 'True/False' : 'Đúng/Sai';
+      if (type === 'short_answer') return isEn ? 'Short Answer' : 'Trả lời ngắn';
+      return isEn ? 'Matching' : 'Ghép nối';
+    };
+
+    const questionDetailRows: Record<string, string | number>[] = [];
+    filteredDetailAttempts.forEach((r) => {
+      const details = Array.isArray(r.details) ? r.details : [];
+      details.forEach((d, qIdx) => {
+        const statusText = d.isUnanswered
+          ? isEn
+            ? 'Unanswered'
+            : 'Chưa trả lời'
+          : d.isFullyCorrect
+          ? isEn
+            ? 'Correct'
+            : 'Đúng'
+          : d.isPartiallyCorrect
+          ? isEn
+            ? 'Partial'
+            : 'Đúng một phần'
+          : isEn
+          ? 'Wrong'
+          : 'Sai';
+        questionDetailRows.push({
+          STT: questionDetailRows.length + 1,
+          'Mã HS': r.studentCode,
+          'Họ và Tên': r.studentName,
+          'Trường THPT': r.schoolName,
+          Lớp: r.className,
+          'Nội dung / Đề': localizeExamTitle(r.title, language),
+          'Điểm bài': r.score,
+          'Thời điểm nộp': formatVNDateTime(r.timestamp, language),
+          'Câu số': qIdx + 1,
+          'Dạng câu hỏi': formatTypeLabel(d.type),
+          'Nội dung câu hỏi': d.questionText || d.contextTitle || d.questionId,
+          'Trả lời của HS': d.userAnswerText || (d.isUnanswered ? (isEn ? '(Skipped)' : '(Bỏ trống)') : ''),
+          'Đáp án chuẩn': d.correctAnswerText || '',
+          'Kết quả': statusText,
+          'Điểm đạt': d.earnedScore,
+          'Điểm tối đa': d.maxScore,
+        });
+      });
+    });
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
@@ -579,6 +651,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       wb,
       XLSX.utils.json_to_sheet(attemptRows),
       isEn ? 'AttemptDetails' : 'ChiTietBaiLam'
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        questionDetailRows.length > 0
+          ? questionDetailRows
+          : [{ 'Ghi chú': isEn ? 'No question-level details recorded yet.' : 'Chưa có chi tiết câu trả lời.' }]
+      ),
+      isEn ? 'QuestionDetails' : 'ChiTietCauTraLoi'
     );
     XLSX.writeFile(
       wb,
@@ -1732,23 +1813,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   </p>
                 </div>
                 {cloudStatus.connected && cloudStatus.isTeacher && cloudStatus.hasMoreAttempts && (
-                  <button
-                    type="button"
-                    disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
-                    onClick={handleLoadOlderAttempts}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold cursor-pointer disabled:opacity-50"
-                  >
-                    <History className="w-3.5 h-3.5" />
-                    <span>
-                      {cloudStatus.loadingOlderAttempts
-                        ? isEn
-                          ? 'Loading older attempts...'
-                          : 'Đang tải bài làm cũ hơn...'
-                        : isEn
-                          ? 'Load Older Attempts'
-                          : 'Tải thêm bài làm cũ hơn'}
-                    </span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                      onClick={handleLoadOlderAttempts}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>
+                        {cloudStatus.loadingOlderAttempts
+                          ? isEn
+                            ? 'Loading older attempts...'
+                            : 'Đang tải bài làm cũ hơn...'
+                          : isEn
+                            ? 'Load Older Attempts'
+                            : 'Tải thêm bài làm cũ hơn'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                      onClick={handleLoadAllOlderAttempts}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      <Cloud className="w-3.5 h-3.5" />
+                      <span>
+                        {cloudStatus.loadingOlderAttempts
+                          ? isEn
+                            ? 'Loading history...'
+                            : 'Đang tải toàn bộ...'
+                          : isEn
+                            ? 'Load Full History'
+                            : 'Tải toàn bộ lịch sử bài cũ'}
+                      </span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -1765,12 +1865,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       <th className="p-2.5 text-center">{isEn ? 'Right / Wrong' : 'Đúng / Sai'}</th>
                       <th className="p-2.5 text-center">{isEn ? 'Duration' : 'Thời gian làm'}</th>
                       <th className="p-2.5">{isEn ? 'Submitted At' : 'Thời điểm nộp'}</th>
+                      <th className="p-2.5 text-center">{isEn ? 'Answers' : 'Chi tiết'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
                     {pagedAttemptRows.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-5 text-center text-slate-400">
+                        <td colSpan={10} className="p-5 text-center text-slate-400">
                           {isEn ? 'No submissions recorded yet.' : 'Chưa có lượt nộp bài nào.'}
                         </td>
                       </tr>
@@ -1804,7 +1905,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             {formatDurationLabel(rec.durationSeconds)}
                           </td>
                           <td className="p-2.5 text-[11px] text-slate-500 whitespace-nowrap">
-                            {formatVNDateTime(rec.timestamp, language)}
+                            <div>{formatVNDateTime(rec.timestamp, language)}</div>
+                            {apiService.isAttemptSyncedToCloud(rec.id) ? (
+                              <span className="inline-block text-[10px] font-bold text-emerald-700">
+                                ● {isEn ? 'Cloud synced' : 'Đã đồng bộ'}
+                              </span>
+                            ) : apiService.isAttemptPending(rec.id) ? (
+                              <span className="inline-block text-[10px] font-bold text-amber-700">
+                                ⏳ {isEn ? 'Pending' : 'Chờ đồng bộ'}
+                              </span>
+                            ) : (
+                              <span className="inline-block text-[10px] font-semibold text-slate-400">
+                                ○ {isEn ? 'Local' : 'Cục bộ'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAttemptDetail(rec)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] cursor-pointer whitespace-nowrap"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{isEn ? 'View' : 'Xem'}</span>
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -2609,23 +2733,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               {(cloudStatus.hasMoreAttempts || cloudStatus.hasMoreActivities) && (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
                   {cloudStatus.hasMoreAttempts && (
-                    <button
-                      type="button"
-                      disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
-                      onClick={handleLoadOlderAttempts}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold cursor-pointer disabled:opacity-50"
-                    >
-                      <History className="w-3.5 h-3.5" />
-                      <span>
-                        {cloudStatus.loadingOlderAttempts
-                          ? isEn
-                            ? 'Loading older attempts...'
-                            : 'Đang tải bài làm cũ hơn...'
-                          : isEn
-                            ? 'Load Older Attempts'
-                            : 'Tải thêm bài làm cũ hơn'}
-                      </span>
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                        onClick={handleLoadOlderAttempts}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold cursor-pointer disabled:opacity-50"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        <span>
+                          {cloudStatus.loadingOlderAttempts
+                            ? isEn
+                              ? 'Loading older attempts...'
+                              : 'Đang tải bài làm cũ hơn...'
+                            : isEn
+                              ? 'Load Older Attempts'
+                              : 'Tải thêm bài làm cũ hơn'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={cloudStatus.loadingOlderAttempts || connectingCloud}
+                        onClick={handleLoadAllOlderAttempts}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                      >
+                        <Cloud className="w-3.5 h-3.5" />
+                        <span>
+                          {cloudStatus.loadingOlderAttempts
+                            ? isEn
+                              ? 'Loading full history...'
+                              : 'Đang tải toàn bộ...'
+                            : isEn
+                              ? 'Load Full History'
+                              : 'Tải toàn bộ lịch sử bài cũ'}
+                        </span>
+                      </button>
+                    </>
                   )}
                   {cloudStatus.hasMoreActivities && (
                     <button
@@ -3808,6 +3951,162 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ATTEMPT QUESTION-BY-QUESTION ANSWER DETAILS */}
+      {selectedAttemptDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full p-6 my-8 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-slate-900">
+                  {localizeExamTitle(selectedAttemptDetail.title, language)}
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  <strong>{selectedAttemptDetail.studentName}</strong> ({selectedAttemptDetail.studentCode}) •{' '}
+                  {isEn ? `Class ${selectedAttemptDetail.className}` : `Lớp ${selectedAttemptDetail.className}`} •{' '}
+                  {selectedAttemptDetail.schoolName}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {isEn ? 'Submitted at:' : 'Thời điểm nộp:'}{' '}
+                  <strong>{formatVNDateTime(selectedAttemptDetail.timestamp, language)}</strong> •{' '}
+                  {isEn ? 'Duration:' : 'Thời gian làm:'}{' '}
+                  <strong>{formatDurationLabel(selectedAttemptDetail.durationSeconds)}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAttemptDetail(null)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-xs">
+              <div className="p-3 rounded-2xl bg-blue-50 border border-blue-200">
+                <div className="text-[11px] text-blue-700 font-semibold">{isEn ? 'Score' : 'Điểm số'}</div>
+                <div className="text-xl font-black text-blue-800">{selectedAttemptDetail.score} đ</div>
+              </div>
+              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <div className="text-[11px] text-emerald-700 font-semibold">{isEn ? 'Correct' : 'Số câu đúng'}</div>
+                <div className="text-xl font-black text-emerald-800">{selectedAttemptDetail.correctCount}</div>
+              </div>
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200">
+                <div className="text-[11px] text-rose-700 font-semibold">{isEn ? 'Wrong' : 'Số câu sai'}</div>
+                <div className="text-xl font-black text-rose-800">{selectedAttemptDetail.wrongCount}</div>
+              </div>
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="text-[11px] text-slate-600 font-semibold">{isEn ? 'Unanswered' : 'Chưa làm'}</div>
+                <div className="text-xl font-black text-slate-800">{selectedAttemptDetail.unansweredCount ?? 0}</div>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                {isEn
+                  ? `Question-by-Question Answers (${selectedAttemptDetail.details?.length || 0})`
+                  : `Chi tiết từng câu trả lời (${selectedAttemptDetail.details?.length || 0} câu)`}
+              </h4>
+
+              {!selectedAttemptDetail.details || selectedAttemptDetail.details.length === 0 ? (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                  {isEn
+                    ? 'This legacy submission stores summary score metrics only without per-question answer logs.'
+                    : 'Bản ghi cũ này chỉ lưu điểm tổng và thống kê tóm tắt, không có dữ liệu chi tiết từng câu trả lời.'}
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {selectedAttemptDetail.details.map((d, qIdx) => {
+                    const statusBadge = d.isUnanswered
+                      ? 'bg-slate-100 text-slate-700 border-slate-200'
+                      : d.isFullyCorrect
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                      : d.isPartiallyCorrect
+                      ? 'bg-amber-100 text-amber-800 border-amber-200'
+                      : 'bg-rose-100 text-rose-800 border-rose-200';
+                    const statusLabel = d.isUnanswered
+                      ? isEn
+                        ? 'Unanswered'
+                        : 'Bỏ trống'
+                      : d.isFullyCorrect
+                      ? isEn
+                        ? 'Correct'
+                        : 'Đúng'
+                      : d.isPartiallyCorrect
+                      ? isEn
+                        ? 'Partial'
+                        : 'Đúng một phần'
+                      : isEn
+                      ? 'Wrong'
+                      : 'Sai';
+
+                    return (
+                      <div
+                        key={`${d.questionId}-${qIdx}`}
+                        className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-2 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-extrabold text-slate-900">
+                            {isEn ? `Question ${qIdx + 1}` : `Câu ${qIdx + 1}`} •{' '}
+                            <span className="font-mono text-[11px] text-slate-500">{d.type}</span>
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-700">
+                              {d.earnedScore}/{d.maxScore} đ
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusBadge}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                        </div>
+
+                        {(d.questionText || d.contextTitle) && (
+                          <p className="font-semibold text-slate-800 leading-relaxed">
+                            {d.questionText || d.contextTitle}
+                          </p>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="p-2 rounded-xl bg-white border border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase">
+                              {isEn ? 'Student Answer' : 'Học sinh trả lời'}
+                            </div>
+                            <div className="font-medium text-slate-800 mt-0.5">
+                              {d.userAnswerText || (d.isUnanswered ? (isEn ? '(Skipped)' : '(Chưa trả lời)') : '—')}
+                            </div>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white border border-emerald-200">
+                            <div className="text-[10px] font-bold text-emerald-700 uppercase">
+                              {isEn ? 'Standard Answer' : 'Đáp án chuẩn'}
+                            </div>
+                            <div className="font-medium text-emerald-900 mt-0.5">
+                              {d.correctAnswerText || '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {d.feedback && (
+                          <div className="text-[11px] text-slate-600 italic">{d.feedback}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedAttemptDetail(null)}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs cursor-pointer"
+              >
+                {isEn ? 'Close' : 'Đóng'}
+              </button>
+            </div>
           </div>
         </div>
       )}

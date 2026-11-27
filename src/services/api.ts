@@ -54,6 +54,7 @@ import {
   isTeacherFirebaseUser,
   isVerifiedFirebaseUser,
   mirrorRecordsToFirestoreAsTeacher,
+  resetPaginationCursors,
   sanitizeFirestoreId,
   signInWithGooglePopup,
   signOutFirebase,
@@ -481,26 +482,27 @@ class ApiService {
   private persistAdminCache(): void {
     try {
       const cachedAttempts = this.cloudAttempts.slice(0, 1200);
+      let persistedAttemptCount = cachedAttempts.length;
       try {
         safeSetItem(ADMIN_CACHE_ATTEMPTS_KEY, JSON.stringify(cachedAttempts));
       } catch {
-        const compacted = cachedAttempts.map((r, idx) =>
+        const compacted = cachedAttempts.slice(0, 800).map((r, idx) =>
           idx < 200 ? r : { ...r, details: [] }
         );
+        persistedAttemptCount = compacted.length;
         try {
-          safeSetItem(ADMIN_CACHE_ATTEMPTS_KEY, JSON.stringify(compacted.slice(0, 800)));
+          safeSetItem(ADMIN_CACHE_ATTEMPTS_KEY, JSON.stringify(compacted));
         } catch {
-          // ignore
+          persistedAttemptCount = 0;
         }
       }
 
+      const cachedActivities = this.cloudActivities.slice(0, 1500);
+      let persistedActivityCount = cachedActivities.length;
       try {
-        safeSetItem(
-          ADMIN_CACHE_ACTIVITIES_KEY,
-          JSON.stringify(this.cloudActivities.slice(0, 1500))
-        );
+        safeSetItem(ADMIN_CACHE_ACTIVITIES_KEY, JSON.stringify(cachedActivities));
       } catch {
-        // ignore
+        persistedActivityCount = 0;
       }
 
       if (this.cloudStudents.length > 0) {
@@ -511,16 +513,38 @@ class ApiService {
         }
       }
 
+      const attemptsTruncated =
+        persistedAttemptCount > 0 && this.cloudAttempts.length > persistedAttemptCount;
+      const persistedAttemptsSlice =
+        persistedAttemptCount > 0 ? this.cloudAttempts.slice(0, persistedAttemptCount) : [];
+      const persistedOldestAttemptMs = attemptsTruncated
+        ? persistedAttemptsSlice.reduce((min, r) => {
+            const ts = Number(r?.timestamp) || 0;
+            return ts > 0 && (min === 0 || ts < min) ? ts : min;
+          }, 0) || this.oldestAttemptCreatedMs
+        : this.oldestAttemptCreatedMs;
+
+      const activitiesTruncated =
+        persistedActivityCount > 0 && this.cloudActivities.length > persistedActivityCount;
+      const persistedActivitiesSlice =
+        persistedActivityCount > 0 ? this.cloudActivities.slice(0, persistedActivityCount) : [];
+      const persistedOldestActivityMs = activitiesTruncated
+        ? persistedActivitiesSlice.reduce((min, a) => {
+            const ts = Number(a?.timestamp) || 0;
+            return ts > 0 && (min === 0 || ts < min) ? ts : min;
+          }, 0) || this.oldestActivityCreatedMs
+        : this.oldestActivityCreatedMs;
+
       safeSetItem(
         ADMIN_CACHE_META_KEY,
         JSON.stringify({
           lastAttemptCreatedMs: this.lastAttemptCreatedMs,
-          oldestAttemptCreatedMs: this.oldestAttemptCreatedMs,
+          oldestAttemptCreatedMs: persistedOldestAttemptMs,
           lastActivityCreatedMs: this.lastActivityCreatedMs,
-          oldestActivityCreatedMs: this.oldestActivityCreatedMs,
+          oldestActivityCreatedMs: persistedOldestActivityMs,
           lastStudentsSyncAt: this.lastStudentsSyncAt,
-          hasMoreAttempts: this.hasMoreAttempts,
-          hasMoreActivities: this.hasMoreActivities,
+          hasMoreAttempts: this.hasMoreAttempts || attemptsTruncated,
+          hasMoreActivities: this.hasMoreActivities || activitiesTruncated,
         })
       );
     } catch {
@@ -540,6 +564,7 @@ class ApiService {
     this.lastStudentsSyncAt = 0;
     this.hasMoreAttempts = false;
     this.hasMoreActivities = false;
+    resetPaginationCursors();
   }
 
   private mergeCloudAttemptsList(incoming: ExamRecord[]): { list: ExamRecord[]; changed: boolean } {
@@ -1554,6 +1579,86 @@ class ApiService {
     }
   }
 
+  async loadAllOlderAttempts(maxPages = 20): Promise<{
+    loaded: number;
+    pagesLoaded: number;
+    hasMore: boolean;
+    error?: string;
+  }> {
+    if (!isTeacherFirebaseUser(auth.currentUser)) {
+      return { loaded: 0, pagesLoaded: 0, hasMore: false, error: 'Chưa xác thực giáo viên.' };
+    }
+    if (this.loadingOlderAttempts || !this.oldestAttemptCreatedMs || !this.hasMoreAttempts) {
+      return { loaded: 0, pagesLoaded: 0, hasMore: this.hasMoreAttempts };
+    }
+    if (this.isQuotaCooldownActive()) {
+      return {
+        loaded: 0,
+        pagesLoaded: 0,
+        hasMore: this.hasMoreAttempts,
+        error: 'Hệ thống đang tạm nghỉ do hết hạn mức đọc miễn phí hôm nay.',
+      };
+    }
+
+    this.loadingOlderAttempts = true;
+    this.emitDataChanged();
+    let totalLoaded = 0;
+    let pagesLoaded = 0;
+    let lastError: string | undefined;
+
+    try {
+      while (
+        pagesLoaded < maxPages &&
+        this.hasMoreAttempts &&
+        this.oldestAttemptCreatedMs > 0 &&
+        !this.isQuotaCooldownActive()
+      ) {
+        const prevOldest = this.oldestAttemptCreatedMs;
+        const prevCount = this.cloudAttempts.length;
+        const res = await fetchOlderAttemptsPage(prevOldest);
+        if (res.error) {
+          lastError = res.error;
+          if (this.isQuotaError(res.error)) {
+            this.triggerQuotaCooldown(res.error);
+          }
+          break;
+        }
+        pagesLoaded++;
+        const merged = this.mergeCloudAttemptsList(res.attempts);
+        this.cloudAttempts = merged.list;
+        const added = Math.max(0, merged.list.length - prevCount);
+        totalLoaded += added;
+        if (
+          res.oldestCreatedMs &&
+          (this.oldestAttemptCreatedMs === 0 || res.oldestCreatedMs < this.oldestAttemptCreatedMs)
+        ) {
+          this.oldestAttemptCreatedMs = res.oldestCreatedMs;
+        }
+        this.hasMoreAttempts = res.hasMore;
+        this.mergeAttemptsIntoLocalCache(merged.list);
+        this.persistAdminCache();
+
+        if (!res.hasMore || res.attempts.length === 0) {
+          break;
+        }
+        // Guard against an identical page loop if fallback query returned only already-known docs
+        if (added === 0 && !merged.changed && this.oldestAttemptCreatedMs >= prevOldest) {
+          break;
+        }
+      }
+      this.emitDataChanged();
+      return {
+        loaded: totalLoaded,
+        pagesLoaded,
+        hasMore: this.hasMoreAttempts,
+        error: lastError,
+      };
+    } finally {
+      this.loadingOlderAttempts = false;
+      this.emitDataChanged();
+    }
+  }
+
   async loadOlderActivitiesPage(): Promise<{ loaded: number; hasMore: boolean; error?: string }> {
     if (!isTeacherFirebaseUser(auth.currentUser)) {
       return { loaded: 0, hasMore: false, error: 'Chưa xác thực giáo viên.' };
@@ -2241,7 +2346,7 @@ class ApiService {
   }
 
   // =========================================================================
-  // 3. CLASSES OF A SCHOOL (supports 'all')
+  // 3. CLASSES OF A SCHOOL (supports 'all' while isolating per school)
   // =========================================================================
   async getClassesBySchool(schoolName: string, _user?: UserProfile): Promise<ClassStats[]> {
     const isAll = schoolName === 'all';
@@ -2261,21 +2366,49 @@ class ApiService {
       storedClasses = INITIAL_CLASSES;
     }
 
-    const classNames = Array.from(
-      new Set([
-        ...storedClasses
-          .filter((c) => isAll || normalizeSchoolKey(c.schoolName) === schKey)
-          .map((c) => normalizeClassName(c.name)),
-        ...students.map((s) => normalizeClassName(s.className || '')).filter(Boolean),
-        ...attempts.map((a) => normalizeClassName(a.className)).filter(Boolean),
-      ])
-    )
-      .filter(Boolean)
-      .sort();
+    const bucketMap = new Map<
+      string,
+      { schoolKey: string; schoolName: string; className: string }
+    >();
+    const registerBucket = (rawSchool: string | undefined, rawClass: string | undefined) => {
+      const cls = normalizeClassName(rawClass || '');
+      if (!cls) return;
+      const normSchool = normalizeSchoolName(
+        rawSchool || (isAll ? 'TRƯỜNG THPT HÒA BÌNH' : schoolName)
+      );
+      const sKey = normalizeSchoolKey(normSchool);
+      if (!isAll && sKey !== schKey) return;
+      const compositeKey = `${sKey}::${cls}`;
+      if (!bucketMap.has(compositeKey)) {
+        bucketMap.set(compositeKey, {
+          schoolKey: sKey,
+          schoolName: normSchool,
+          className: cls,
+        });
+      }
+    };
 
-    return classNames.map((cls) => {
-      const cAttempts = attempts.filter((a) => normalizeClassName(a.className) === cls);
-      const cStudents = students.filter((s) => normalizeClassName(s.className || '') === cls);
+    storedClasses.forEach((c) => registerBucket(c.schoolName, c.name));
+    students.forEach((s) => registerBucket(s.school, s.className));
+    attempts.forEach((a) => registerBucket(a.schoolName, a.className));
+
+    const buckets = Array.from(bucketMap.values()).sort(
+      (a, b) =>
+        a.className.localeCompare(b.className, 'vi') ||
+        a.schoolName.localeCompare(b.schoolName, 'vi')
+    );
+
+    return buckets.map((bucket) => {
+      const cAttempts = attempts.filter(
+        (a) =>
+          normalizeClassName(a.className) === bucket.className &&
+          normalizeSchoolKey(a.schoolName) === bucket.schoolKey
+      );
+      const cStudents = students.filter(
+        (s) =>
+          normalizeClassName(s.className || '') === bucket.className &&
+          normalizeSchoolKey(s.school) === bucket.schoolKey
+      );
       const activeStudentCount = new Set(
         cAttempts.map((a) => stripDiacriticsLower(a.studentName || a.studentId))
       ).size;
@@ -2288,8 +2421,8 @@ class ApiService {
       const passCount = cAttempts.filter((a) => (Number(a.score) || 0) >= 5.0).length;
 
       return {
-        schoolName: isAll ? cStudents[0]?.school || cAttempts[0]?.schoolName || 'Tất cả' : schoolName,
-        className: cls,
+        schoolName: isAll ? bucket.schoolName : schoolName,
+        className: bucket.className,
         studentCount: totalUniqueStudents,
         activeStudentCount,
         attemptCount: cAttempts.length,
@@ -2460,6 +2593,42 @@ class ApiService {
     _strict = false
   ): Promise<ExamRecord[]> {
     return this.filterAttemptsLocal(this.getLocalAttempts(), filters);
+  }
+
+  getAttemptById(attemptId: string): ExamRecord | null {
+    if (!attemptId) return null;
+    const safeId = sanitizeFirestoreId(attemptId, 'att');
+    return (
+      this.getLocalAttempts().find(
+        (a) => a.id === attemptId || sanitizeFirestoreId(a.id, 'att') === safeId
+      ) || null
+    );
+  }
+
+  getStudentAttempts(student: {
+    studentId?: string;
+    studentCode?: string;
+    studentName: string;
+    schoolName?: string;
+    className?: string;
+  }): ExamRecord[] {
+    const stSchKey = student.schoolName ? normalizeSchoolKey(student.schoolName) : '';
+    const stClsKey = student.className ? normalizeClassName(student.className) : '';
+    const stNameNorm = stripDiacriticsLower(student.studentName || '');
+    const stCodeNorm = String(student.studentCode || '').trim().toUpperCase();
+
+    return this.getLocalAttempts()
+      .filter((a) => {
+        if (student.studentId && a.studentId === student.studentId) return true;
+        const sameSchool = !stSchKey || normalizeSchoolKey(a.schoolName) === stSchKey;
+        const sameClass = !stClsKey || normalizeClassName(a.className) === stClsKey;
+        if (!sameSchool || !sameClass) return false;
+        if (stCodeNorm && stCodeNorm !== 'HS' && String(a.studentCode || '').trim().toUpperCase() === stCodeNorm) {
+          return true;
+        }
+        return Boolean(stNameNorm && stripDiacriticsLower(a.studentName) === stNameNorm);
+      })
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }
 
   // =========================================================================

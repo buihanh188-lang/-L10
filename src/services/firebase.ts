@@ -24,9 +24,14 @@ import {
   serverTimestamp,
   setDoc,
   startAfter,
+  startAt,
   Timestamp,
   updateDoc,
   where,
+  type DocumentData,
+  type Query,
+  type QueryDocumentSnapshot,
+  type QuerySnapshot,
   type Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -1091,6 +1096,16 @@ function extractCreatedAtMs(data: Record<string, any> | undefined): number {
 }
 
 const DEFAULT_ADMIN_PAGE_SIZE = 250;
+const STUDENTS_PAGE_SIZE = 400;
+const MAX_STUDENTS_PAGES = 5;
+
+let lastAttemptDocCursor: QueryDocumentSnapshot<DocumentData> | null = null;
+let lastActivityDocCursor: QueryDocumentSnapshot<DocumentData> | null = null;
+
+export function resetPaginationCursors(): void {
+  lastAttemptDocCursor = null;
+  lastActivityDocCursor = null;
+}
 
 export interface SubscribeCloudOptions {
   attemptsSinceCreatedMs?: number;
@@ -1140,6 +1155,10 @@ export function subscribeCloudData(
   const unsubAttempts = onSnapshot(
     attemptsQuery,
     (snapshot) => {
+      if (attemptsSinceMs === 0) {
+        lastAttemptDocCursor =
+          snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+      }
       let latestCreated = 0;
       let oldestCreated = 0;
       const attempts: ExamRecord[] = [];
@@ -1181,6 +1200,10 @@ export function subscribeCloudData(
   const unsubActivities = onSnapshot(
     activitiesQuery,
     (snapshot) => {
+      if (activitiesSinceMs === 0) {
+        lastActivityDocCursor =
+          snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+      }
       let latestCreated = 0;
       let oldestCreated = 0;
       const activities: LearningActivity[] = [];
@@ -1291,6 +1314,10 @@ export async function fetchCloudDataOnce(options?: {
             )
           : query(collection(db, 'attempts'), orderBy('createdAt', 'desc'), limit(pageLimit));
       const attSnap = await getDocs(attemptsQuery);
+      if (attemptsSinceMs === 0) {
+        lastAttemptDocCursor =
+          attSnap.docs.length > 0 ? attSnap.docs[attSnap.docs.length - 1] : null;
+      }
       let maxC = 0;
       let minC = 0;
       const list: ExamRecord[] = [];
@@ -1328,6 +1355,10 @@ export async function fetchCloudDataOnce(options?: {
             )
           : query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limit(pageLimit));
       const actSnap = await getDocs(activitiesQuery);
+      if (activitiesSinceMs === 0) {
+        lastActivityDocCursor =
+          actSnap.docs.length > 0 ? actSnap.docs[actSnap.docs.length - 1] : null;
+      }
       let maxC = 0;
       let minC = 0;
       const list: LearningActivity[] = [];
@@ -1354,13 +1385,30 @@ export async function fetchCloudDataOnce(options?: {
 
   const studentsTask = (async () => {
     if (!options?.includeStudents) return;
+    const collected: UserProfile[] = [];
     try {
-      const stSnap = await getDocs(query(collection(db, 'students'), limit(400)));
-      students = stSnap.docs
-        .map((d) => safeParseUserProfile(d.id, d.data()))
-        .filter((s): s is UserProfile => Boolean(s && s.id));
+      let lastStudentDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+      for (let page = 0; page < MAX_STUDENTS_PAGES; page++) {
+        const stQuery: Query<DocumentData> = lastStudentDoc
+          ? query(collection(db, 'students'), startAfter(lastStudentDoc), limit(STUDENTS_PAGE_SIZE))
+          : query(collection(db, 'students'), limit(STUDENTS_PAGE_SIZE));
+        const stSnap: QuerySnapshot<DocumentData> = await getDocs(stQuery);
+        stSnap.docs.forEach((d: QueryDocumentSnapshot<DocumentData>) => {
+          const parsed = safeParseUserProfile(d.id, d.data());
+          if (parsed && parsed.id) collected.push(parsed);
+        });
+        if (stSnap.docs.length < STUDENTS_PAGE_SIZE) {
+          break;
+        }
+        lastStudentDoc = stSnap.docs[stSnap.docs.length - 1];
+      }
+      students = collected;
       fetched.students = true;
     } catch (error) {
+      if (collected.length > 0) {
+        students = collected;
+        fetched.students = true;
+      }
       const info = logFirestoreError(error, OperationType.LIST, 'students');
       errors.students = info.error;
     }
@@ -1395,13 +1443,28 @@ export async function fetchOlderAttemptsPage(
     return { attempts: [], hasMore: false, error: 'Chưa xác thực tài khoản giáo viên.' };
   }
   try {
-    const q = query(
-      collection(db, 'attempts'),
-      orderBy('createdAt', 'desc'),
-      startAfter(Timestamp.fromMillis(beforeCreatedMs)),
-      limit(pageSize)
-    );
+    // Prefer DocumentSnapshot cursor (tie-safe); fall back to startAt(Timestamp) after cache reload
+    // so tied createdAt timestamps at page boundaries are never skipped (merged by doc ID).
+    const usedDocCursor = Boolean(lastAttemptDocCursor);
+    const q = lastAttemptDocCursor
+      ? query(
+          collection(db, 'attempts'),
+          orderBy('createdAt', 'desc'),
+          startAfter(lastAttemptDocCursor),
+          limit(pageSize)
+        )
+      : query(
+          collection(db, 'attempts'),
+          orderBy('createdAt', 'desc'),
+          startAt(Timestamp.fromMillis(beforeCreatedMs)),
+          limit(pageSize)
+        );
     const snap = await getDocs(q);
+    if (snap.docs.length > 0) {
+      lastAttemptDocCursor = snap.docs[snap.docs.length - 1];
+    } else {
+      lastAttemptDocCursor = null;
+    }
     let minC = 0;
     const list: ExamRecord[] = [];
     snap.docs.forEach((d) => {
@@ -1414,7 +1477,7 @@ export async function fetchOlderAttemptsPage(
     const attempts = list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     return {
       attempts,
-      hasMore: snap.docs.length >= pageSize,
+      hasMore: usedDocCursor ? snap.docs.length >= pageSize : snap.docs.length >= pageSize,
       oldestCreatedMs: minC || undefined,
     };
   } catch (error) {
@@ -1437,13 +1500,25 @@ export async function fetchOlderActivitiesPage(
     return { activities: [], hasMore: false, error: 'Chưa xác thực tài khoản giáo viên.' };
   }
   try {
-    const q = query(
-      collection(db, 'activities'),
-      orderBy('createdAt', 'desc'),
-      startAfter(Timestamp.fromMillis(beforeCreatedMs)),
-      limit(pageSize)
-    );
+    const q = lastActivityDocCursor
+      ? query(
+          collection(db, 'activities'),
+          orderBy('createdAt', 'desc'),
+          startAfter(lastActivityDocCursor),
+          limit(pageSize)
+        )
+      : query(
+          collection(db, 'activities'),
+          orderBy('createdAt', 'desc'),
+          startAt(Timestamp.fromMillis(beforeCreatedMs)),
+          limit(pageSize)
+        );
     const snap = await getDocs(q);
+    if (snap.docs.length > 0) {
+      lastActivityDocCursor = snap.docs[snap.docs.length - 1];
+    } else {
+      lastActivityDocCursor = null;
+    }
     let minC = 0;
     const list: LearningActivity[] = [];
     snap.docs.forEach((d) => {

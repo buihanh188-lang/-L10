@@ -53,7 +53,8 @@ import { LESSONS } from '../data/lessons';
 import { CURRICULUM_CHAPTERS } from '../data/curriculum';
 import { TOPICS } from '../data/topics';
 import { getLocalizedLesson, getLocalizedTopic } from '../data/bilingualCurriculum';
-import { localizeSknnEfficacyRow } from '../services/bilingualQuestions';
+import { localizeExamTitle, localizeSknnEfficacyRow } from '../services/bilingualQuestions';
+import { formatVNDateTime } from '../utils/dateUtils';
 import { normalizeSchoolKey } from '../utils/normalize';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -88,6 +89,7 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
 
   // Student Dossier Drawer/Modal
   const [selectedStudentDossier, setSelectedStudentDossier] = useState<StudentStatsSummary | null>(null);
+  const [expandedDossierAttemptId, setExpandedDossierAttemptId] = useState<string | null>(null);
 
   // Password reset feedback
   const [passwordResetFeedback, setPasswordResetFeedback] = useState<string | null>(null);
@@ -1203,7 +1205,10 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
                 </div>
               </div>
               <button
-                onClick={() => setSelectedStudentDossier(null)}
+                onClick={() => {
+                  setSelectedStudentDossier(null);
+                  setExpandedDossierAttemptId(null);
+                }}
                 className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -1270,6 +1275,144 @@ export const MultiSchoolStats: React.FC<MultiSchoolStatsProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Individual Attempts & Expandable Question-Level Details */}
+            {(() => {
+              const dossierAttempts = apiService.getStudentAttempts({
+                studentId: selectedStudentDossier.studentId,
+                studentCode: selectedStudentDossier.studentCode,
+                studentName: selectedStudentDossier.studentName,
+                schoolName: selectedStudentDossier.schoolName,
+                className: selectedStudentDossier.className,
+              });
+              return (
+                <div className="space-y-2">
+                  <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                    <span>
+                      {isEn
+                        ? `Submission History (${dossierAttempts.length})`
+                        : `Lịch sử từng lượt làm bài (${dossierAttempts.length} lượt)`}
+                    </span>
+                  </div>
+                  {dossierAttempts.length === 0 ? (
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 text-center">
+                      {isEn ? 'No submissions recorded yet.' : 'Chưa ghi nhận lượt nộp bài nào.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {dossierAttempts.map((att) => {
+                        const isExpanded = expandedDossierAttemptId === att.id;
+                        const isSynced = apiService.isAttemptSyncedToCloud(att.id);
+                        const isPending = apiService.isAttemptPending(att.id);
+                        return (
+                          <div
+                            key={att.id}
+                            className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
+                          >
+                            <div className="p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-slate-900 truncate">
+                                  {localizeExamTitle(att.title, language)}
+                                </div>
+                                <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-2 mt-0.5">
+                                  <span>{formatVNDateTime(att.timestamp, language)}</span>
+                                  <span>·</span>
+                                  <span className="font-semibold text-emerald-700">{att.correctCount}✓</span>
+                                  <span>/</span>
+                                  <span className="font-semibold text-rose-600">{att.wrongCount}✕</span>
+                                  {(att.unansweredCount ?? 0) > 0 && (
+                                    <span className="text-slate-400">({att.unansweredCount} {isEn ? 'skipped' : 'bỏ trống'})</span>
+                                  )}
+                                  <span>·</span>
+                                  {isSynced ? (
+                                    <span className="text-emerald-700 font-bold">{isEn ? 'Cloud synced' : 'Đã đồng bộ'}</span>
+                                  ) : isPending ? (
+                                    <span className="text-amber-700 font-bold">{isEn ? 'Queued' : 'Đang chờ đồng bộ'}</span>
+                                  ) : (
+                                    <span className="text-slate-400">{isEn ? 'Local' : 'Cục bộ'}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 font-black">
+                                  {att.score} đ
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedDossierAttemptId(isExpanded ? null : att.id)
+                                  }
+                                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] cursor-pointer"
+                                >
+                                  {isExpanded
+                                    ? isEn
+                                      ? 'Hide'
+                                      : 'Thu gọn'
+                                    : isEn
+                                    ? 'Answers'
+                                    : 'Xem câu trả lời'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="border-t border-slate-100 bg-slate-50 p-3 space-y-2 text-[11px]">
+                                {!att.details || att.details.length === 0 ? (
+                                  <div className="text-amber-800">
+                                    {isEn
+                                      ? 'Legacy record: summary scores only, no per-question details stored.'
+                                      : 'Bản ghi cũ chỉ lưu điểm tổng, không có chi tiết từng câu trả lời.'}
+                                  </div>
+                                ) : (
+                                  att.details.map((d, qIdx) => (
+                                    <div
+                                      key={`${d.questionId}-${qIdx}`}
+                                      className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1"
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="font-bold text-slate-900">
+                                          {isEn ? `Q${qIdx + 1}` : `Câu ${qIdx + 1}`}
+                                        </span>
+                                        <span
+                                          className={`font-bold ${
+                                            d.isUnanswered
+                                              ? 'text-slate-500'
+                                              : d.isFullyCorrect
+                                              ? 'text-emerald-700'
+                                              : d.isPartiallyCorrect
+                                              ? 'text-amber-700'
+                                              : 'text-rose-600'
+                                          }`}
+                                        >
+                                          {d.earnedScore}/{d.maxScore} đ
+                                        </span>
+                                      </div>
+                                      {(d.questionText || d.contextTitle) && (
+                                        <div className="text-slate-700 font-medium">
+                                          {d.questionText || d.contextTitle}
+                                        </div>
+                                      )}
+                                      <div className="text-slate-600">
+                                        <strong>{isEn ? 'Answer:' : 'Trả lời:'}</strong>{' '}
+                                        {d.userAnswerText || (isEn ? '(Skipped)' : '(Chưa trả lời)')}
+                                      </div>
+                                      <div className="text-emerald-800">
+                                        <strong>{isEn ? 'Standard:' : 'Đáp án:'}</strong>{' '}
+                                        {d.correctAnswerText || '—'}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-2 border-t border-slate-100">
