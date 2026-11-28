@@ -25,7 +25,8 @@ import {
   ensureAnonymousStudentSession,
   isCloudSyncEligibleUser,
   isTeacherFirebaseUser,
-  subscribeCloudData,
+  subscribeActivitiesData,
+  subscribeAttemptsData,
   subscribeFirebaseAuth,
 } from './services/firebase';
 
@@ -82,18 +83,73 @@ function AppContent() {
     };
   }, [currentUser?.role]);
 
-  // Firebase Auth & Real-time Firestore Cloud Sync Listener
+  // Firebase Auth & Real-time Firestore Cloud Sync Listeners (isolated per domain)
   React.useEffect(() => {
-    let unsubCloud: (() => void) | null = null;
-    const unsubAuth = subscribeFirebaseAuth((fbUser) => {
-      setFirebaseAuthReady(true);
+    type FbAuthUser = Parameters<typeof subscribeAttemptsData>[0];
+    let currentFbUser: FbAuthUser | null = null;
+    let unsubAttempts: (() => void) | null = null;
+    let unsubActivities: (() => void) | null = null;
 
-      if (unsubCloud) {
-        unsubCloud();
-        unsubCloud = null;
+    const detachCloudListeners = () => {
+      if (unsubAttempts) {
+        unsubAttempts();
+        unsubAttempts = null;
+      }
+      if (unsubActivities) {
+        unsubActivities();
+        unsubActivities = null;
+      }
+    };
+
+    const attachCloudListeners = (fbUser: FbAuthUser | null) => {
+      if (!fbUser || !isTeacherFirebaseUser(fbUser)) return;
+      const watermarks = apiService.getTeacherSyncWatermarks();
+
+      if (!unsubAttempts && !apiService.isQuotaCooldownActive('attempts')) {
+        unsubAttempts = subscribeAttemptsData(
+          fbUser,
+          (payload) => {
+            apiService.setCloudSyncError(null, 'attempts');
+            apiService.setCloudSyncData(payload);
+          },
+          (err) => {
+            apiService.setCloudSyncError(err.message, 'attempts');
+            if (apiService.isQuotaCooldownActive('attempts') && unsubAttempts) {
+              unsubAttempts();
+              unsubAttempts = null;
+            }
+            console.warn('Firestore attempts listener notice:', err.message);
+          },
+          { attemptsSinceCreatedMs: watermarks.attemptsSinceCreatedMs }
+        );
       }
 
+      if (!unsubActivities && !apiService.isQuotaCooldownActive('activities')) {
+        unsubActivities = subscribeActivitiesData(
+          fbUser,
+          (payload) => {
+            apiService.setCloudSyncError(null, 'activities');
+            apiService.setCloudSyncData(payload);
+          },
+          (err) => {
+            apiService.setCloudSyncError(err.message, 'activities');
+            if (apiService.isQuotaCooldownActive('activities') && unsubActivities) {
+              unsubActivities();
+              unsubActivities = null;
+            }
+            console.warn('Firestore activities listener notice:', err.message);
+          },
+          { activitiesSinceCreatedMs: watermarks.activitiesSinceCreatedMs }
+        );
+      }
+    };
+
+    const unsubAuth = subscribeFirebaseAuth((fbUser) => {
+      setFirebaseAuthReady(true);
+      detachCloudListeners();
+
       if (isCloudSyncEligibleUser(fbUser)) {
+        currentFbUser = fbUser as FbAuthUser;
         apiService.setCloudAuthContext(fbUser);
 
         // Automatically restore verified teacher session when returning to /admin
@@ -115,25 +171,11 @@ function AppContent() {
             }
           }
           apiService.startTeacherAutoSync();
+          attachCloudListeners(fbUser as FbAuthUser);
         } else {
           apiService.stopTeacherAutoSync();
         }
 
-        unsubCloud =
-          isTeacherFirebaseUser(fbUser) && apiService.isQuotaCooldownActive()
-            ? () => {}
-            : subscribeCloudData(
-                fbUser,
-                (payload) => {
-                  apiService.setCloudSyncError(null, payload.collection);
-                  apiService.setCloudSyncData(payload);
-                },
-                (err, collectionName) => {
-                  apiService.setCloudSyncError(err.message, collectionName);
-                  console.warn('Firestore live listener notice:', collectionName, err.message);
-                },
-                isTeacherFirebaseUser(fbUser) ? apiService.getTeacherSyncWatermarks() : undefined
-              );
         // Automatically recover device history & flush any queued offline student attempts & learning activities
         const activeOnAuth = StorageService.getCurrentUser();
         if (activeOnAuth?.role === 'student') {
@@ -143,14 +185,30 @@ function AppContent() {
           apiService.flushPendingActivities().catch(() => {});
         }
       } else {
+        currentFbUser = null;
         apiService.stopTeacherAutoSync();
         apiService.setCloudAuthContext(null);
       }
     });
 
+    const unsubReconnect = apiService.subscribeCloudReconnect(() => {
+      if (currentFbUser && isTeacherFirebaseUser(currentFbUser)) {
+        attachCloudListeners(currentFbUser);
+      }
+    });
+
+    const handleOnlineReconnect = () => {
+      if (currentFbUser && isTeacherFirebaseUser(currentFbUser)) {
+        attachCloudListeners(currentFbUser);
+      }
+    };
+    window.addEventListener('online', handleOnlineReconnect);
+
     return () => {
       unsubAuth();
-      if (unsubCloud) unsubCloud();
+      unsubReconnect();
+      window.removeEventListener('online', handleOnlineReconnect);
+      detachCloudListeners();
       apiService.stopTeacherAutoSync();
     };
   }, []);
@@ -182,16 +240,22 @@ function AppContent() {
     const handleResumeSync = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-      if (apiService.isQuotaCooldownActive()) return;
+      const attemptsCooldown = apiService.isQuotaCooldownActive('attempts');
+      const activitiesCooldown = apiService.isQuotaCooldownActive('activities');
+      if (attemptsCooldown && activitiesCooldown) return;
       const activeUser = StorageService.getCurrentUser();
       if (activeUser?.role === 'student') {
-        if (apiService.hasPendingStudentSyncData()) {
+        if (apiService.hasRetryablePendingStudentSyncData()) {
           apiService.syncStudentDeviceHistoryToServer(activeUser).catch(() => {});
         }
-        apiService.recordLearningActivity({ type: 'visit' }, activeUser).catch(() => false);
+        if (!activitiesCooldown) {
+          apiService.recordLearningActivity({ type: 'visit' }, activeUser).catch(() => false);
+        }
       } else {
-        if (apiService.hasPendingStudentSyncData()) {
+        if (!attemptsCooldown) {
           apiService.flushPendingAttempts(activeUser || undefined).catch(() => {});
+        }
+        if (!activitiesCooldown) {
           apiService.flushPendingActivities().catch(() => {});
         }
       }

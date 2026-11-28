@@ -15,6 +15,7 @@ import {
   INITIAL_STUDENTS,
 } from '../data/mockUsers';
 import { apiService } from './api';
+import { idbPutMany, writeAttemptsArrayToLocalStorage } from './localDomainStore';
 import { localizeExamTitle, localizeQuestion } from './bilingualQuestions';
 import { LESSONS } from '../data/lessons';
 
@@ -241,13 +242,8 @@ export class StorageService {
     try {
       const records = this.getExamRecords().filter((r) => r.id !== record.id);
       records.unshift(record);
-      try {
-        localStorage.setItem(STORAGE_KEYS.EXAM_RECORDS, JSON.stringify(records));
-      } catch {
-        // Trim oldest cached records if localStorage quota is tight while keeping the newest record
-        const trimmed = records.slice(0, 60);
-        localStorage.setItem(STORAGE_KEYS.EXAM_RECORDS, JSON.stringify(trimmed));
-      }
+      writeAttemptsArrayToLocalStorage(STORAGE_KEYS.EXAM_RECORDS, records);
+      idbPutMany('attempts', [record]).catch(() => false);
     } catch (e) {
       console.warn('Could not cache exam record locally:', e);
     }

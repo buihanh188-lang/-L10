@@ -170,7 +170,6 @@ export const LessonLearningAnalytics: React.FC<LessonLearningAnalyticsProps> = (
       setLastSyncedAt(Date.now());
     } catch (err: any) {
       console.error('Error loading live server attempts:', err);
-      if (!silent) setRecords([]);
       setRecordsError(
         err?.message ||
           (isEn

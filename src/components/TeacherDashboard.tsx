@@ -291,7 +291,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   // Filtered records by class
   const filteredRecords = allRecords.filter((r) => {
-    if (selectedClass !== 'all' && r.className !== selectedClass) return false;
+    if (
+      selectedClass !== 'all' &&
+      normalizeClassName(r.className || '') !== normalizeClassName(selectedClass)
+    ) {
+      return false;
+    }
     return true;
   });
 

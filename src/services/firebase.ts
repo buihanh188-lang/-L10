@@ -623,8 +623,11 @@ async function ensureStudentProfileDocExists(
         // verify existence once via getDoc on non-quota failures.
         const snap = await getDoc(studentRef);
         if (snap.exists()) {
-          markCachedProfileUid(uid);
-          return true;
+          const data = snap.data();
+          if (!data?.ownerUid || data.ownerUid === uid) {
+            markCachedProfileUid(uid);
+            return true;
+          }
         }
       }
       throw err;
@@ -808,7 +811,6 @@ export async function syncAttemptToCloud(
   let profileVerified = false;
   try {
     // 1. Ensure students/{uid} exists (0 Firestore reads for both cached returning and brand-new students)
-    const wasCached = readCachedProfileUids().has(uid);
     profileVerified = await ensureStudentProfileDocExists(uid, studentProfileSeed, false);
 
     // 2. Write attempts/{id} directly without pre-reading attempts/{id} (saves 1-2 reads per submit)
@@ -819,9 +821,9 @@ export async function syncAttemptToCloud(
       if (isFirestoreQuotaError(writeErr)) {
         throw writeErr;
       }
-      const writeCode = String(writeErr?.code || '');
-      // If cached UID flag was stale, re-ensure students/{uid} once and retry setDoc
-      if (writeCode === 'permission-denied' && wasCached) {
+      const writeCode = String(writeErr?.code || '').toLowerCase();
+      // Always re-verify/re-create students/{uid} once and retry setDoc on permission-denied
+      if (writeCode.includes('permission-denied')) {
         clearCachedProfileUid(uid);
         profileVerified = await ensureStudentProfileDocExists(uid, studentProfileSeed, true);
         await setDoc(attemptRef, payload);
@@ -891,15 +893,7 @@ export async function syncActivityToCloud(
   const activityPath = `activities/${safeActivityId}`;
 
   try {
-    try {
-      const existing = await getDoc(activityRef);
-      if (existing.exists()) {
-        return { synced: true, activityId: safeActivityId, alreadyExists: true };
-      }
-    } catch {
-      // proceed to create
-    }
-
+    // Create-first: 0 pre-reads on normal activity sync to conserve Spark read quota
     await setDoc(activityRef, payload);
     return { synced: true, activityId: safeActivityId };
   } catch (error: any) {
@@ -1098,6 +1092,7 @@ function extractCreatedAtMs(data: Record<string, any> | undefined): number {
 const DEFAULT_ADMIN_PAGE_SIZE = 250;
 const STUDENTS_PAGE_SIZE = 400;
 const MAX_STUDENTS_PAGES = 5;
+const DELTA_OVERLAP_MS = 60_000;
 
 let lastAttemptDocCursor: QueryDocumentSnapshot<DocumentData> | null = null;
 let lastActivityDocCursor: QueryDocumentSnapshot<DocumentData> | null = null;
@@ -1113,46 +1108,46 @@ export interface SubscribeCloudOptions {
   pageSize?: number;
 }
 
-export function subscribeCloudData(
+export interface CloudUpdatePayload {
+  attempts?: ExamRecord[];
+  students?: UserProfile[];
+  activities?: LearningActivity[];
+  collection?: 'attempts' | 'students' | 'activities';
+  isDelta?: boolean;
+  hasMoreAttempts?: boolean;
+  hasMoreActivities?: boolean;
+  latestAttemptCreatedMs?: number;
+  oldestAttemptCreatedMs?: number;
+  latestActivityCreatedMs?: number;
+  oldestActivityCreatedMs?: number;
+}
+
+export function subscribeAttemptsData(
   user: FirebaseUser,
-  onUpdate: (payload: {
-    attempts?: ExamRecord[];
-    students?: UserProfile[];
-    activities?: LearningActivity[];
-    collection?: 'attempts' | 'students' | 'activities';
-    isDelta?: boolean;
-    hasMoreAttempts?: boolean;
-    hasMoreActivities?: boolean;
-    latestAttemptCreatedMs?: number;
-    oldestAttemptCreatedMs?: number;
-    latestActivityCreatedMs?: number;
-    oldestActivityCreatedMs?: number;
-  }) => void,
-  onError?: (err: Error, collectionName?: 'attempts' | 'students' | 'activities') => void,
-  options?: SubscribeCloudOptions
+  onUpdate: (payload: CloudUpdatePayload) => void,
+  onError?: (err: Error, collectionName?: 'attempts') => void,
+  options?: Pick<SubscribeCloudOptions, 'attemptsSinceCreatedMs' | 'pageSize'>
 ): Unsubscribe {
-  // Strictly attach live Firestore listeners ONLY for verified Teacher Admin.
-  // Students write directly to Firestore and read from localStorage — 0 continuous reads per student!
   if (!isTeacherFirebaseUser(user)) {
     return () => {};
   }
 
-  const unsubs: Unsubscribe[] = [];
   const pageLimit = options?.pageSize || DEFAULT_ADMIN_PAGE_SIZE;
   const attemptsSinceMs = Number(options?.attemptsSinceCreatedMs) || 0;
-  const activitiesSinceMs = Number(options?.activitiesSinceCreatedMs) || 0;
+  const effectiveSinceMs =
+    attemptsSinceMs > 0 ? Math.max(0, attemptsSinceMs - DELTA_OVERLAP_MS) : 0;
 
   const attemptsQuery =
-    attemptsSinceMs > 0
+    effectiveSinceMs > 0
       ? query(
           collection(db, 'attempts'),
-          where('createdAt', '>', Timestamp.fromMillis(attemptsSinceMs)),
+          where('createdAt', '>', Timestamp.fromMillis(effectiveSinceMs)),
           orderBy('createdAt', 'desc'),
           limit(pageLimit)
         )
       : query(collection(db, 'attempts'), orderBy('createdAt', 'desc'), limit(pageLimit));
 
-  const unsubAttempts = onSnapshot(
+  return onSnapshot(
     attemptsQuery,
     (snapshot) => {
       if (attemptsSinceMs === 0) {
@@ -1185,19 +1180,34 @@ export function subscribeCloudData(
       if (onError) onError(new Error(info.error), 'attempts');
     }
   );
-  unsubs.push(unsubAttempts);
+}
+
+export function subscribeActivitiesData(
+  user: FirebaseUser,
+  onUpdate: (payload: CloudUpdatePayload) => void,
+  onError?: (err: Error, collectionName?: 'activities') => void,
+  options?: Pick<SubscribeCloudOptions, 'activitiesSinceCreatedMs' | 'pageSize'>
+): Unsubscribe {
+  if (!isTeacherFirebaseUser(user)) {
+    return () => {};
+  }
+
+  const pageLimit = options?.pageSize || DEFAULT_ADMIN_PAGE_SIZE;
+  const activitiesSinceMs = Number(options?.activitiesSinceCreatedMs) || 0;
+  const effectiveSinceMs =
+    activitiesSinceMs > 0 ? Math.max(0, activitiesSinceMs - DELTA_OVERLAP_MS) : 0;
 
   const activitiesQuery =
-    activitiesSinceMs > 0
+    effectiveSinceMs > 0
       ? query(
           collection(db, 'activities'),
-          where('createdAt', '>', Timestamp.fromMillis(activitiesSinceMs)),
+          where('createdAt', '>', Timestamp.fromMillis(effectiveSinceMs)),
           orderBy('createdAt', 'desc'),
           limit(pageLimit)
         )
       : query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limit(pageLimit));
 
-  const unsubActivities = onSnapshot(
+  return onSnapshot(
     activitiesQuery,
     (snapshot) => {
       if (activitiesSinceMs === 0) {
@@ -1230,16 +1240,34 @@ export function subscribeCloudData(
       if (onError) onError(new Error(info.error), 'activities');
     }
   );
-  unsubs.push(unsubActivities);
+}
+
+export function subscribeCloudData(
+  user: FirebaseUser,
+  onUpdate: (payload: CloudUpdatePayload) => void,
+  onError?: (err: Error, collectionName?: 'attempts' | 'students' | 'activities') => void,
+  options?: SubscribeCloudOptions
+): Unsubscribe {
+  // Strictly attach live Firestore listeners ONLY for verified Teacher Admin.
+  // Students write directly to Firestore and read from localStorage — 0 continuous reads per student!
+  if (!isTeacherFirebaseUser(user)) {
+    return () => {};
+  }
+
+  const unsubAttempts = subscribeAttemptsData(user, onUpdate, onError, options);
+  const unsubActivities = subscribeActivitiesData(user, onUpdate, onError, options);
 
   return () => {
-    unsubs.forEach((fn) => {
-      try {
-        fn();
-      } catch {
-        // ignore
-      }
-    });
+    try {
+      unsubAttempts();
+    } catch {
+      // ignore
+    }
+    try {
+      unsubActivities();
+    } catch {
+      // ignore
+    }
   };
 }
 
@@ -1304,11 +1332,13 @@ export async function fetchCloudDataOnce(options?: {
   const attemptsTask = (async () => {
     if (!shouldFetchAttempts) return;
     try {
+      const effectiveAttemptsSinceMs =
+        attemptsSinceMs > 0 ? Math.max(0, attemptsSinceMs - DELTA_OVERLAP_MS) : 0;
       const attemptsQuery =
-        attemptsSinceMs > 0
+        effectiveAttemptsSinceMs > 0
           ? query(
               collection(db, 'attempts'),
-              where('createdAt', '>', Timestamp.fromMillis(attemptsSinceMs)),
+              where('createdAt', '>', Timestamp.fromMillis(effectiveAttemptsSinceMs)),
               orderBy('createdAt', 'desc'),
               limit(pageLimit)
             )
@@ -1345,11 +1375,13 @@ export async function fetchCloudDataOnce(options?: {
   const activitiesTask = (async () => {
     if (!shouldFetchActivities) return;
     try {
+      const effectiveActivitiesSinceMs =
+        activitiesSinceMs > 0 ? Math.max(0, activitiesSinceMs - DELTA_OVERLAP_MS) : 0;
       const activitiesQuery =
-        activitiesSinceMs > 0
+        effectiveActivitiesSinceMs > 0
           ? query(
               collection(db, 'activities'),
-              where('createdAt', '>', Timestamp.fromMillis(activitiesSinceMs)),
+              where('createdAt', '>', Timestamp.fromMillis(effectiveActivitiesSinceMs)),
               orderBy('createdAt', 'desc'),
               limit(pageLimit)
             )
@@ -1483,6 +1515,31 @@ export async function fetchOlderAttemptsPage(
   } catch (error) {
     const info = logFirestoreError(error, OperationType.LIST, 'attempts');
     return { attempts: [], hasMore: false, error: info.error };
+  }
+}
+
+export async function fetchAttemptsTimestampFallback(
+  pageSize = DEFAULT_ADMIN_PAGE_SIZE
+): Promise<{
+  attempts: ExamRecord[];
+  error?: string;
+}> {
+  const user = auth.currentUser;
+  if (!isTeacherFirebaseUser(user)) {
+    return { attempts: [], error: 'Chưa xác thực tài khoản giáo viên.' };
+  }
+  try {
+    const q = query(collection(db, 'attempts'), orderBy('timestamp', 'desc'), limit(pageSize));
+    const snap = await getDocs(q);
+    const list: ExamRecord[] = [];
+    snap.docs.forEach((d) => {
+      const parsed = safeParseExamRecord(d.id, d.data());
+      if (parsed && parsed.id) list.push(parsed);
+    });
+    return { attempts: list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) };
+  } catch (error) {
+    const info = logFirestoreError(error, OperationType.LIST, 'attempts');
+    return { attempts: [], error: info.error };
   }
 }
 

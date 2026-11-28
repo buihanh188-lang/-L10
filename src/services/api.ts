@@ -45,6 +45,7 @@ import {
   auth,
   deleteAttemptFromCloud,
   ensureAnonymousStudentSession,
+  fetchAttemptsTimestampFallback,
   fetchCloudDataOnce,
   fetchOlderActivitiesPage,
   fetchOlderAttemptsPage,
@@ -63,6 +64,25 @@ import {
   syncStudentProfileToCloud,
   TEACHER_ADMIN_EMAIL,
 } from './firebase';
+import {
+  idbDeleteById,
+  idbGetAll,
+  idbGetMeta,
+  idbPutMany,
+  idbReplaceAll,
+  idbSetMeta,
+  mergeExamRecordsKeepingDetails,
+  mergeUserProfilesClean,
+  readStorageSafe,
+  removeStorageSafe,
+  sanitizeAttemptMergeKey,
+  writeActivitiesArrayToLocalStorage,
+  writeAttemptsArrayToLocalStorage,
+  writeStorageBestEffort,
+  writeStorageStrict,
+} from './localDomainStore';
+
+export type CloudDomain = 'attempts' | 'students' | 'activities';
 
 const TEACHER_TOKEN_KEY = 'dia_li_10_teacher_token';
 const PENDING_ATTEMPTS_KEY = 'dia_li_10_pending_attempts';
@@ -86,6 +106,7 @@ const ADMIN_CACHE_ACTIVITIES_KEY = 'dia_li_10_admin_cache_activities_v1';
 const ADMIN_CACHE_STUDENTS_KEY = 'dia_li_10_admin_cache_students_v1';
 const ADMIN_CACHE_META_KEY = 'dia_li_10_admin_cache_meta_v1';
 const QUOTA_COOLDOWN_KEY = 'dl10_firestore_quota_until';
+const QUOTA_COOLDOWN_KEY_PREFIX = 'dl10_firestore_quota_until_';
 const QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
 const STUDENTS_REFRESH_TTL_MS = 15 * 60 * 1000;
 
@@ -105,33 +126,16 @@ const DEFAULT_TEACHER_USER: UserProfile = {
 
 const OFFICIAL_SCHOOL_KEY = normalizeSchoolKey('TRƯỜNG THPT HÒA BÌNH');
 
-// In-memory fallback in case storage is blocked by browser privacy policy
-const memoryFallback = new Map<string, string>();
-
 function safeGetItem(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return memoryFallback.get(key) ?? null;
-  }
+  return readStorageSafe(key);
 }
 
 function safeSetItem(key: string, value: string): void {
-  memoryFallback.set(key, value);
-  try {
-    window.localStorage.setItem(key, value);
-  } catch (e) {
-    console.warn(`localStorage.setItem failed for ${key}:`, e);
-  }
+  writeStorageBestEffort(key, value);
 }
 
 function safeRemoveItem(key: string): void {
-  memoryFallback.delete(key);
-  try {
-    window.localStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
+  removeStorageSafe(key);
 }
 
 function stripDiacriticsLower(s: string): string {
@@ -250,7 +254,12 @@ class ApiService {
   private cloudUserEmail: string | null = null;
   private cloudIsTeacher = false;
   private cloudLastError: string | null = null;
-  private quotaCooldownUntil = 0;
+  private lastCloudAuthUid: string | null = null;
+  private quotaCooldownUntilByDomain: Record<CloudDomain, number> = {
+    attempts: 0,
+    students: 0,
+    activities: 0,
+  };
   private lastAttemptCreatedMs = 0;
   private oldestAttemptCreatedMs = 0;
   private lastActivityCreatedMs = 0;
@@ -258,9 +267,13 @@ class ApiService {
   private lastStudentsSyncAt = 0;
   private hasMoreAttempts = false;
   private hasMoreActivities = false;
+  private attemptsHistoryComplete = false;
   private loadingOlderAttempts = false;
   private loadingOlderActivities = false;
+  private autoBackfillScheduled = false;
   private lastManualRefreshAt = 0;
+  private idbHydrated = false;
+  private idbHydratePromise: Promise<void> | null = null;
   private collectionErrors: { attempts?: string; students?: string; activities?: string } = {};
   private lastRecoverySummary: {
     recoveredAttempts: number;
@@ -271,24 +284,32 @@ class ApiService {
     error?: string;
   } | null = null;
   private dataListeners = new Set<() => void>();
+  private cloudReconnectListeners = new Set<() => void>();
 
   constructor() {
     this.migrateLegacyDemoDataOnce();
     this.loadConfirmedSyncedIds();
     this.loadQuotaCooldown();
-    if (this.getTeacherToken()) {
+    const isTeacherSession = Boolean(this.getTeacherToken());
+    if (isTeacherSession) {
       this.hydrateAdminCache();
     }
+    this.hydrateIndexedDbStores(isTeacherSession).catch(() => {});
   }
 
   private loadQuotaCooldown(): void {
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
-        const raw = window.sessionStorage.getItem(QUOTA_COOLDOWN_KEY);
-        const until = raw ? Number(raw) : 0;
-        if (Number.isFinite(until) && until > Date.now()) {
-          this.quotaCooldownUntil = until;
-        }
+        const now = Date.now();
+        // Clean legacy unified cooldown key if present so stale global locks don't persist
+        window.sessionStorage.removeItem(QUOTA_COOLDOWN_KEY);
+        (['attempts', 'students', 'activities'] as CloudDomain[]).forEach((domain) => {
+          const raw = window.sessionStorage.getItem(`${QUOTA_COOLDOWN_KEY_PREFIX}${domain}`);
+          const until = raw ? Number(raw) : 0;
+          if (Number.isFinite(until) && until > now) {
+            this.quotaCooldownUntilByDomain[domain] = until;
+          }
+        });
       }
     } catch {
       // ignore
@@ -299,47 +320,86 @@ class ApiService {
     return isFirestoreQuotaError(msg);
   }
 
-  private triggerQuotaCooldown(reason?: string): void {
+  private triggerQuotaCooldown(reason?: string, domain: CloudDomain = 'attempts'): void {
     const until = Date.now() + QUOTA_COOLDOWN_MS;
-    if (until > this.quotaCooldownUntil) {
-      this.quotaCooldownUntil = until;
+    if (until > this.quotaCooldownUntilByDomain[domain]) {
+      this.quotaCooldownUntilByDomain[domain] = until;
     }
     try {
       if (typeof window !== 'undefined' && window.sessionStorage) {
-        window.sessionStorage.setItem(QUOTA_COOLDOWN_KEY, String(this.quotaCooldownUntil));
+        window.sessionStorage.setItem(
+          `${QUOTA_COOLDOWN_KEY_PREFIX}${domain}`,
+          String(this.quotaCooldownUntilByDomain[domain])
+        );
       }
     } catch {
       // ignore
     }
     if (reason) {
-      this.cloudLastError = String(reason).slice(0, 240);
-    }
-  }
-
-  private clearQuotaCooldown(): void {
-    this.quotaCooldownUntil = 0;
-    try {
-      if (typeof window !== 'undefined' && window.sessionStorage) {
-        window.sessionStorage.removeItem(QUOTA_COOLDOWN_KEY);
+      const clipped = String(reason).slice(0, 240);
+      this.collectionErrors[domain] = clipped;
+      if (domain === 'attempts' || !this.cloudLastError) {
+        this.cloudLastError = clipped;
       }
-    } catch {
-      // ignore
     }
   }
 
-  isQuotaCooldownActive(): boolean {
-    if (this.quotaCooldownUntil <= 0) return false;
-    if (Date.now() >= this.quotaCooldownUntil) {
-      this.clearQuotaCooldown();
+  private clearQuotaCooldown(domain?: CloudDomain): void {
+    const targets: CloudDomain[] = domain ? [domain] : ['attempts', 'students', 'activities'];
+    targets.forEach((d) => {
+      this.quotaCooldownUntilByDomain[d] = 0;
+      delete this.collectionErrors[d];
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          window.sessionStorage.removeItem(`${QUOTA_COOLDOWN_KEY_PREFIX}${d}`);
+        }
+      } catch {
+        // ignore
+      }
+    });
+    if (!domain) {
+      this.cloudLastError = null;
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          window.sessionStorage.removeItem(QUOTA_COOLDOWN_KEY);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  isQuotaCooldownActive(domain: CloudDomain = 'attempts'): boolean {
+    const until = this.quotaCooldownUntilByDomain[domain] || 0;
+    if (until <= 0) return false;
+    if (Date.now() >= until) {
+      this.clearQuotaCooldown(domain);
       return false;
     }
     return true;
   }
 
+  subscribeCloudReconnect(listener: () => void): () => void {
+    this.cloudReconnectListeners.add(listener);
+    return () => {
+      this.cloudReconnectListeners.delete(listener);
+    };
+  }
+
+  private emitCloudReconnect(): void {
+    this.cloudReconnectListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (e) {
+        console.warn('Cloud reconnect listener warning:', e);
+      }
+    });
+  }
+
   private syncProfileIfQuotaAllows(profile: Partial<UserProfile>, force = false): Promise<boolean> {
-    if (this.isQuotaCooldownActive()) return Promise.resolve(false);
+    if (this.isQuotaCooldownActive('students')) return Promise.resolve(false);
     return syncStudentProfileToCloud(profile, force, (errMsg) => {
-      this.triggerQuotaCooldown(errMsg);
+      this.triggerQuotaCooldown(errMsg, 'students');
     });
   }
 
@@ -413,11 +473,9 @@ class ApiService {
             (r: ExamRecord) =>
               r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
           );
-          if (clean.length > 0 && this.cloudAttempts.length === 0) {
-            this.cloudAttempts = clean;
-            clean.forEach((r) =>
-              this.confirmedCloudAttemptIds.add(sanitizeFirestoreId(r.id, 'att'))
-            );
+          if (clean.length > 0) {
+            const merged = this.mergeCloudAttemptsList(clean);
+            this.cloudAttempts = merged.list;
           }
         }
       }
@@ -431,11 +489,9 @@ class ApiService {
         const parsed = JSON.parse(rawAct);
         if (Array.isArray(parsed)) {
           const clean = parsed.filter((a: LearningActivity) => a && a.id);
-          if (clean.length > 0 && this.cloudActivities.length === 0) {
-            this.cloudActivities = clean;
-            clean.forEach((a) =>
-              this.confirmedCloudActivityIds.add(sanitizeFirestoreId(a.id, 'act'))
-            );
+          if (clean.length > 0) {
+            const mergedActs = this.mergeCloudActivitiesList(clean);
+            this.cloudActivities = mergedActs.list;
           }
         }
       }
@@ -451,8 +507,9 @@ class ApiService {
           const clean = parsed.filter(
             (s: UserProfile) => s && s.id && !isLegacyDemoStudentId(s.id)
           );
-          if (clean.length > 0 && this.cloudStudents.length === 0) {
-            this.cloudStudents = clean;
+          if (clean.length > 0) {
+            const mergedStu = this.mergeCloudStudentsList(clean);
+            this.cloudStudents = mergedStu.list;
           }
         }
       }
@@ -472,51 +529,219 @@ class ApiService {
           this.lastStudentsSyncAt = Number(meta.lastStudentsSyncAt) || 0;
           this.hasMoreAttempts = Boolean(meta.hasMoreAttempts);
           this.hasMoreActivities = Boolean(meta.hasMoreActivities);
+          this.attemptsHistoryComplete = Boolean(meta.attemptsHistoryComplete);
         }
       }
     } catch {
       // ignore
     }
+
+    // Critical invariant: NEVER preserve a non-zero delta watermark when the cached dataset is empty
+    if (this.cloudAttempts.length === 0) {
+      this.lastAttemptCreatedMs = 0;
+      this.oldestAttemptCreatedMs = 0;
+      this.hasMoreAttempts = false;
+      this.attemptsHistoryComplete = false;
+    }
+    if (this.cloudActivities.length === 0) {
+      this.lastActivityCreatedMs = 0;
+      this.oldestActivityCreatedMs = 0;
+      this.hasMoreActivities = false;
+    }
+  }
+
+  private async hydrateIndexedDbStores(includeAdminStores: boolean): Promise<void> {
+    if (this.idbHydratePromise) {
+      await this.idbHydratePromise;
+      if (!includeAdminStores || this.idbHydrated) return;
+    }
+
+    const task = (async () => {
+      let changed = false;
+      try {
+        // 1. Always restore pending queues from IndexedDB if localStorage was wiped or full
+        const [idbPendingAttempts, idbPendingActivities, idbAttempts] = await Promise.all([
+          idbGetAll<ExamRecord>('pending_attempts'),
+          idbGetAll<LearningActivity>('pending_activities'),
+          idbGetAll<ExamRecord>('attempts'),
+        ]);
+
+        if (idbPendingAttempts.length > 0) {
+          const curPending = this.getPendingAttempts();
+          const byKey = new Map<string, ExamRecord>();
+          curPending.forEach((r) => {
+            if (r && r.id) byKey.set(sanitizeAttemptMergeKey(r.id), r);
+          });
+          let pendingAdded = false;
+          idbPendingAttempts.forEach((r) => {
+            if (!r || !r.id || isLegacyDemoAttemptId(r.id) || isLegacyDemoStudentId(r.studentId)) return;
+            const k = sanitizeAttemptMergeKey(r.id);
+            const prev = byKey.get(k);
+            const merged = mergeExamRecordsKeepingDetails(prev, r);
+            if (!prev || (prev.details?.length || 0) < (merged.details?.length || 0)) {
+              pendingAdded = true;
+            }
+            byKey.set(k, merged);
+          });
+          if (pendingAdded) {
+            writeAttemptsArrayToLocalStorage(PENDING_ATTEMPTS_KEY, Array.from(byKey.values()));
+            changed = true;
+          }
+        }
+
+        if (idbPendingActivities.length > 0) {
+          const curPendingActs = this.getPendingActivities();
+          const actByKey = new Map<string, LearningActivity>();
+          curPendingActs.forEach((a) => {
+            if (a && a.id) actByKey.set(sanitizeFirestoreId(a.id, 'act'), a);
+          });
+          let actAdded = false;
+          idbPendingActivities.forEach((a) => {
+            if (!a || !a.id) return;
+            const k = sanitizeFirestoreId(a.id, 'act');
+            if (!actByKey.has(k)) {
+              actByKey.set(k, a);
+              actAdded = true;
+            }
+          });
+          if (actAdded) {
+            writeActivitiesArrayToLocalStorage(PENDING_ACTIVITIES_KEY, Array.from(actByKey.values()));
+            changed = true;
+          }
+        }
+
+        if (idbAttempts.length > 0) {
+          const cleanIdbAttempts = idbAttempts.filter(
+            (r) => r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)
+          );
+          if (cleanIdbAttempts.length > 0) {
+            if (this.mergeAttemptsIntoLocalCache(cleanIdbAttempts)) {
+              changed = true;
+            }
+            if (includeAdminStores) {
+              const mergedCloud = this.mergeCloudAttemptsList(cleanIdbAttempts);
+              this.cloudAttempts = mergedCloud.list;
+              if (mergedCloud.changed) changed = true;
+            }
+          }
+        }
+
+        if (includeAdminStores) {
+          const [idbActivities, idbStudents, idbMeta] = await Promise.all([
+            idbGetAll<LearningActivity>('activities'),
+            idbGetAll<UserProfile>('students'),
+            idbGetMeta<Record<string, any>>('admin_sync_meta'),
+          ]);
+
+          if (idbActivities.length > 0) {
+            const mergedActs = this.mergeCloudActivitiesList(idbActivities);
+            this.cloudActivities = mergedActs.list;
+            if (mergedActs.changed) changed = true;
+          }
+          if (idbStudents.length > 0) {
+            const cleanStudents = idbStudents.filter((s) => s && s.id && !isLegacyDemoStudentId(s.id));
+            if (cleanStudents.length > 0) {
+              const mergedStu = this.mergeCloudStudentsList(cleanStudents);
+              this.cloudStudents = mergedStu.list;
+              if (mergedStu.changed) changed = true;
+            }
+          }
+          if (idbMeta) {
+            const metaLastAtt = Number(idbMeta.lastAttemptCreatedMs) || 0;
+            const metaOldestAtt = Number(idbMeta.oldestAttemptCreatedMs) || 0;
+            const metaLastAct = Number(idbMeta.lastActivityCreatedMs) || 0;
+            const metaOldestAct = Number(idbMeta.oldestActivityCreatedMs) || 0;
+            if (this.cloudAttempts.length > 0) {
+              if (metaLastAtt > this.lastAttemptCreatedMs) this.lastAttemptCreatedMs = metaLastAtt;
+              if (metaOldestAtt > 0 && (this.oldestAttemptCreatedMs === 0 || metaOldestAtt < this.oldestAttemptCreatedMs)) {
+                this.oldestAttemptCreatedMs = metaOldestAtt;
+              }
+              if (typeof idbMeta.attemptsHistoryComplete === 'boolean' && idbMeta.attemptsHistoryComplete) {
+                this.attemptsHistoryComplete = true;
+              }
+            } else {
+              this.lastAttemptCreatedMs = 0;
+              this.oldestAttemptCreatedMs = 0;
+              this.hasMoreAttempts = false;
+              this.attemptsHistoryComplete = false;
+            }
+            if (this.cloudActivities.length > 0) {
+              if (metaLastAct > this.lastActivityCreatedMs) this.lastActivityCreatedMs = metaLastAct;
+              if (metaOldestAct > 0 && (this.oldestActivityCreatedMs === 0 || metaOldestAct < this.oldestActivityCreatedMs)) {
+                this.oldestActivityCreatedMs = metaOldestAct;
+              }
+            } else {
+              this.lastActivityCreatedMs = 0;
+              this.oldestActivityCreatedMs = 0;
+              this.hasMoreActivities = false;
+            }
+            if (Number(idbMeta.lastStudentsSyncAt) > this.lastStudentsSyncAt) {
+              this.lastStudentsSyncAt = Number(idbMeta.lastStudentsSyncAt);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('IndexedDB hydration notice:', e);
+      } finally {
+        if (includeAdminStores) this.idbHydrated = true;
+      }
+
+      if (changed) {
+        this.emitDataChanged();
+      }
+    })();
+
+    this.idbHydratePromise = task;
+    try {
+      await task;
+    } finally {
+      if (this.idbHydratePromise === task) {
+        this.idbHydratePromise = null;
+      }
+    }
   }
 
   private persistAdminCache(): void {
     try {
-      const cachedAttempts = this.cloudAttempts.slice(0, 1200);
-      let persistedAttemptCount = cachedAttempts.length;
-      try {
-        safeSetItem(ADMIN_CACHE_ATTEMPTS_KEY, JSON.stringify(cachedAttempts));
-      } catch {
-        const compacted = cachedAttempts.slice(0, 800).map((r, idx) =>
-          idx < 200 ? r : { ...r, details: [] }
-        );
-        persistedAttemptCount = compacted.length;
-        try {
-          safeSetItem(ADMIN_CACHE_ATTEMPTS_KEY, JSON.stringify(compacted));
-        } catch {
-          persistedAttemptCount = 0;
-        }
-      }
+      const pendingIds = this.getPendingAttemptIdSet();
+      const cachedAttempts = this.cloudAttempts.slice(0, 1500);
+      const attWrite = writeAttemptsArrayToLocalStorage(
+        ADMIN_CACHE_ATTEMPTS_KEY,
+        cachedAttempts,
+        pendingIds
+      );
+      const persistedAttemptCount = attWrite.persistedCount;
 
       const cachedActivities = this.cloudActivities.slice(0, 1500);
-      let persistedActivityCount = cachedActivities.length;
-      try {
-        safeSetItem(ADMIN_CACHE_ACTIVITIES_KEY, JSON.stringify(cachedActivities));
-      } catch {
-        persistedActivityCount = 0;
-      }
+      const actWrite = writeActivitiesArrayToLocalStorage(
+        ADMIN_CACHE_ACTIVITIES_KEY,
+        cachedActivities
+      );
+      const persistedActivityCount = actWrite.persistedCount;
 
       if (this.cloudStudents.length > 0) {
         try {
-          safeSetItem(ADMIN_CACHE_STUDENTS_KEY, JSON.stringify(this.cloudStudents.slice(0, 1000)));
+          writeStorageStrict(
+            ADMIN_CACHE_STUDENTS_KEY,
+            JSON.stringify(this.cloudStudents.slice(0, 1200))
+          );
         } catch {
-          // ignore
+          try {
+            writeStorageStrict(
+              ADMIN_CACHE_STUDENTS_KEY,
+              JSON.stringify(this.cloudStudents.slice(0, 600))
+            );
+          } catch {
+            // IndexedDB still keeps the full student list below
+          }
         }
       }
 
       const attemptsTruncated =
-        persistedAttemptCount > 0 && this.cloudAttempts.length > persistedAttemptCount;
+        attWrite.truncated ||
+        (persistedAttemptCount > 0 && this.cloudAttempts.length > persistedAttemptCount);
       const persistedAttemptsSlice =
-        persistedAttemptCount > 0 ? this.cloudAttempts.slice(0, persistedAttemptCount) : [];
+        persistedAttemptCount > 0 ? cachedAttempts.slice(0, persistedAttemptCount) : [];
       const persistedOldestAttemptMs = attemptsTruncated
         ? persistedAttemptsSlice.reduce((min, r) => {
             const ts = Number(r?.timestamp) || 0;
@@ -525,9 +750,10 @@ class ApiService {
         : this.oldestAttemptCreatedMs;
 
       const activitiesTruncated =
-        persistedActivityCount > 0 && this.cloudActivities.length > persistedActivityCount;
+        actWrite.truncated ||
+        (persistedActivityCount > 0 && this.cloudActivities.length > persistedActivityCount);
       const persistedActivitiesSlice =
-        persistedActivityCount > 0 ? this.cloudActivities.slice(0, persistedActivityCount) : [];
+        persistedActivityCount > 0 ? cachedActivities.slice(0, persistedActivityCount) : [];
       const persistedOldestActivityMs = activitiesTruncated
         ? persistedActivitiesSlice.reduce((min, a) => {
             const ts = Number(a?.timestamp) || 0;
@@ -535,18 +761,49 @@ class ApiService {
           }, 0) || this.oldestActivityCreatedMs
         : this.oldestActivityCreatedMs;
 
-      safeSetItem(
+      // Critical invariant: only persist non-zero watermarks when their collection actually persisted >= 1 record
+      const safeLastAttemptMs = persistedAttemptCount > 0 ? this.lastAttemptCreatedMs : 0;
+      const safeOldestAttemptMs = persistedAttemptCount > 0 ? persistedOldestAttemptMs : 0;
+      const safeLastActivityMs = persistedActivityCount > 0 ? this.lastActivityCreatedMs : 0;
+      const safeOldestActivityMs = persistedActivityCount > 0 ? persistedOldestActivityMs : 0;
+
+      writeStorageBestEffort(
         ADMIN_CACHE_META_KEY,
         JSON.stringify({
-          lastAttemptCreatedMs: this.lastAttemptCreatedMs,
-          oldestAttemptCreatedMs: persistedOldestAttemptMs,
-          lastActivityCreatedMs: this.lastActivityCreatedMs,
-          oldestActivityCreatedMs: persistedOldestActivityMs,
+          lastAttemptCreatedMs: safeLastAttemptMs,
+          oldestAttemptCreatedMs: safeOldestAttemptMs,
+          lastActivityCreatedMs: safeLastActivityMs,
+          oldestActivityCreatedMs: safeOldestActivityMs,
           lastStudentsSyncAt: this.lastStudentsSyncAt,
-          hasMoreAttempts: this.hasMoreAttempts || attemptsTruncated,
-          hasMoreActivities: this.hasMoreActivities || activitiesTruncated,
+          hasMoreAttempts:
+            persistedAttemptCount > 0 ? this.hasMoreAttempts || attemptsTruncated : false,
+          hasMoreActivities:
+            persistedActivityCount > 0 ? this.hasMoreActivities || activitiesTruncated : false,
+          attemptsHistoryComplete:
+            persistedAttemptCount > 0 ? this.attemptsHistoryComplete && !attemptsTruncated : false,
         })
       );
+
+      // Durable IndexedDB backup with full details (unaffected by 5MB localStorage limit)
+      if (this.cloudAttempts.length > 0) {
+        idbPutMany('attempts', this.cloudAttempts).catch(() => false);
+      }
+      if (this.cloudActivities.length > 0) {
+        idbPutMany('activities', this.cloudActivities.slice(0, 2000)).catch(() => false);
+      }
+      if (this.cloudStudents.length > 0) {
+        idbPutMany('students', this.cloudStudents).catch(() => false);
+      }
+      idbSetMeta('admin_sync_meta', {
+        lastAttemptCreatedMs: this.cloudAttempts.length > 0 ? this.lastAttemptCreatedMs : 0,
+        oldestAttemptCreatedMs: this.cloudAttempts.length > 0 ? this.oldestAttemptCreatedMs : 0,
+        lastActivityCreatedMs: this.cloudActivities.length > 0 ? this.lastActivityCreatedMs : 0,
+        oldestActivityCreatedMs: this.cloudActivities.length > 0 ? this.oldestActivityCreatedMs : 0,
+        lastStudentsSyncAt: this.lastStudentsSyncAt,
+        hasMoreAttempts: this.cloudAttempts.length > 0 ? this.hasMoreAttempts : false,
+        hasMoreActivities: this.cloudActivities.length > 0 ? this.hasMoreActivities : false,
+        attemptsHistoryComplete: this.cloudAttempts.length > 0 ? this.attemptsHistoryComplete : false,
+      }).catch(() => false);
     } catch {
       // ignore
     }
@@ -564,38 +821,34 @@ class ApiService {
     this.lastStudentsSyncAt = 0;
     this.hasMoreAttempts = false;
     this.hasMoreActivities = false;
+    this.attemptsHistoryComplete = false;
     resetPaginationCursors();
   }
 
   private mergeCloudAttemptsList(incoming: ExamRecord[]): { list: ExamRecord[]; changed: boolean } {
     const byId = new Map<string, ExamRecord>();
     this.cloudAttempts.forEach((r) => {
-      if (r && r.id) byId.set(sanitizeFirestoreId(r.id, 'att'), r);
+      if (r && r.id) byId.set(sanitizeAttemptMergeKey(r.id), r);
     });
     const prevSize = byId.size;
     let changed = false;
     incoming.forEach((r) => {
       if (!r || !r.id || isLegacyDemoAttemptId(r.id) || isLegacyDemoStudentId(r.studentId)) return;
-      const key = sanitizeFirestoreId(r.id, 'att');
+      const key = sanitizeAttemptMergeKey(r.id);
       const existing = byId.get(key);
       if (!existing) {
         changed = true;
         byId.set(key, r);
       } else {
-        const mergedDetails =
-          Array.isArray(r.details) && r.details.length > 0
-            ? r.details
-            : Array.isArray(existing.details)
-            ? existing.details
-            : [];
+        const merged = mergeExamRecordsKeepingDetails(existing, r);
         if (
-          existing.score !== r.score ||
-          existing.studentName !== r.studentName ||
-          (existing.details?.length || 0) !== mergedDetails.length
+          existing.score !== merged.score ||
+          existing.studentName !== merged.studentName ||
+          (existing.details?.length || 0) !== (merged.details?.length || 0)
         ) {
           changed = true;
         }
-        byId.set(key, { ...existing, ...r, details: mergedDetails });
+        byId.set(key, merged);
       }
       this.confirmedCloudAttemptIds.add(key);
     });
@@ -812,7 +1065,7 @@ class ApiService {
       if (Array.isArray(parsed)) {
         parsed.forEach((r: ExamRecord) => {
           if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
-            localMap.set(r.id, r);
+            localMap.set(sanitizeAttemptMergeKey(r.id), r);
           }
         });
       }
@@ -823,9 +1076,18 @@ class ApiService {
     let changed = false;
     attempts.forEach((r) => {
       if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
-        if (!localMap.has(r.id)) changed = true;
-        localMap.set(r.id, r);
-        this.ensureClassExistsLocal(r.className, r.schoolName);
+        const key = sanitizeAttemptMergeKey(r.id);
+        const existing = localMap.get(key);
+        const merged = mergeExamRecordsKeepingDetails(existing, r);
+        if (
+          !existing ||
+          existing.score !== merged.score ||
+          (existing.details?.length || 0) < (merged.details?.length || 0)
+        ) {
+          changed = true;
+        }
+        localMap.set(key, merged);
+        this.ensureClassExistsLocal(merged.className, merged.schoolName);
       }
     });
     if (changed || localMap.size !== prevSize) {
@@ -950,13 +1212,20 @@ class ApiService {
     user: { uid: string; email?: string | null; emailVerified?: boolean; isAnonymous?: boolean } | null
   ): void {
     if (user && user.uid && (user.emailVerified || user.isAnonymous)) {
+      if (this.lastCloudAuthUid !== user.uid) {
+        this.sessionPermissionLockedAttemptIds.clear();
+        this.lastCloudAuthUid = user.uid;
+      }
       this.cloudConnected = true;
       this.cloudUserEmail = user.email || null;
       this.cloudIsTeacher = Boolean(
         user.emailVerified && user.email && user.email.toLowerCase() === TEACHER_ADMIN_EMAIL
       );
-      if (this.cloudIsTeacher && this.cloudAttempts.length === 0) {
-        this.hydrateAdminCache();
+      if (this.cloudIsTeacher) {
+        if (this.cloudAttempts.length === 0) {
+          this.hydrateAdminCache();
+        }
+        this.hydrateIndexedDbStores(true).catch(() => {});
       }
     } else {
       this.cloudConnected = false;
@@ -990,10 +1259,37 @@ class ApiService {
   }
 
   hasPendingStudentSyncData(): boolean {
-    const hasPendingAttempt = this.getPendingAttempts().some(
-      (p) => p && p.id && !this.sessionPermissionLockedAttemptIds.has(sanitizeFirestoreId(p.id, 'att'))
-    );
-    return hasPendingAttempt || this.getPendingActivities().length > 0;
+    return this.getPendingAttempts().length > 0 || this.getPendingActivities().length > 0;
+  }
+
+  hasRetryablePendingStudentSyncData(): boolean {
+    const hasRetryableAttempt =
+      !this.isQuotaCooldownActive('attempts') &&
+      this.getPendingAttempts().some(
+        (p) => p && p.id && !this.sessionPermissionLockedAttemptIds.has(sanitizeFirestoreId(p.id, 'att'))
+      );
+    const hasRetryableActivity =
+      !this.isQuotaCooldownActive('activities') && this.getPendingActivities().length > 0;
+    return hasRetryableAttempt || hasRetryableActivity;
+  }
+
+  private scheduleAutoBackfillOlderAttempts(): void {
+    if (
+      typeof window === 'undefined' ||
+      this.autoBackfillScheduled ||
+      this.attemptsHistoryComplete ||
+      !this.hasMoreAttempts ||
+      this.loadingOlderAttempts ||
+      this.isQuotaCooldownActive('attempts') ||
+      !isTeacherFirebaseUser(auth.currentUser)
+    ) {
+      return;
+    }
+    this.autoBackfillScheduled = true;
+    window.setTimeout(() => {
+      this.autoBackfillScheduled = false;
+      this.loadAllOlderAttempts(8).catch(() => {});
+    }, 300);
   }
 
   setCloudSyncData(payload: {
@@ -1026,6 +1322,9 @@ class ApiService {
     }
     if (typeof payload.hasMoreAttempts === 'boolean') {
       this.hasMoreAttempts = payload.hasMoreAttempts;
+      if (!payload.isDelta && payload.hasMoreAttempts === false) {
+        this.attemptsHistoryComplete = true;
+      }
     }
 
     if (payload.students) {
@@ -1055,12 +1354,20 @@ class ApiService {
       this.hasMoreActivities = payload.hasMoreActivities;
     }
 
-    if (Object.keys(this.collectionErrors).length === 0) {
-      this.cloudLastError = null;
-    }
+    const remainingErrs = Object.values(this.collectionErrors).filter(Boolean);
+    this.cloudLastError = remainingErrs.length > 0 ? remainingErrs[0]! : null;
 
     if (this.cloudIsTeacher || this.getTeacherToken()) {
       this.persistAdminCache();
+    }
+
+    if (
+      payload.collection === 'attempts' &&
+      !payload.isDelta &&
+      payload.hasMoreAttempts === true &&
+      !this.attemptsHistoryComplete
+    ) {
+      this.scheduleAutoBackfillOlderAttempts();
     }
 
     this.emitDataChanged();
@@ -1076,17 +1383,15 @@ class ApiService {
       } else {
         this.collectionErrors = {};
       }
-      if (Object.keys(this.collectionErrors).length === 0) {
-        this.cloudLastError = null;
-      }
+      const remaining = Object.values(this.collectionErrors).filter(Boolean);
+      this.cloudLastError = remaining.length > 0 ? remaining[0]! : null;
     } else {
       const clipped = String(err).slice(0, 240);
-      if (collectionName) {
-        this.collectionErrors[collectionName] = clipped;
-      }
+      const targetDomain: CloudDomain = collectionName || 'attempts';
+      this.collectionErrors[targetDomain] = clipped;
       if (this.isQuotaError(clipped)) {
-        this.triggerQuotaCooldown(clipped);
-      } else {
+        this.triggerQuotaCooldown(clipped, targetDomain);
+      } else if (targetDomain === 'attempts' || !this.cloudLastError) {
         this.cloudLastError = clipped;
       }
     }
@@ -1171,7 +1476,10 @@ class ApiService {
       cloudActivityCount: uniqueActivityIds.size,
       pendingCount: this.getPendingAttempts().length,
       pendingActivityCount: this.getPendingActivities().length,
-      quotaLimited: this.isQuotaCooldownActive(),
+      quotaLimited:
+        this.isQuotaCooldownActive('attempts') ||
+        this.isQuotaCooldownActive('activities') ||
+        this.isQuotaCooldownActive('students'),
       hasMoreAttempts: this.hasMoreAttempts,
       hasMoreActivities: this.hasMoreActivities,
       loadingOlderAttempts: this.loadingOlderAttempts,
@@ -1196,7 +1504,9 @@ class ApiService {
     needsConsoleEnable?: boolean;
     errorMessage?: string;
   }> {
-    if (this.isQuotaCooldownActive()) {
+    const attemptsQuotaPaused = this.isQuotaCooldownActive('attempts');
+    const activitiesQuotaPaused = this.isQuotaCooldownActive('activities');
+    if (attemptsQuotaPaused && activitiesQuotaPaused) {
       const pendingAttemptsRemaining = this.getPendingAttempts().length;
       const pendingActivitiesRemaining = this.getPendingActivities().length;
       return {
@@ -1207,6 +1517,7 @@ class ApiService {
         pendingAttemptsRemaining,
         pendingActivitiesRemaining,
         errorMessage:
+          this.collectionErrors.attempts ||
           this.cloudLastError ||
           'Máy chủ đang tạm giới hạn lượt đọc/ghi miễn phí; dữ liệu vẫn được bảo lưu an toàn trên máy.',
       };
@@ -1225,8 +1536,12 @@ class ApiService {
       this.postProfileToServer(profile).catch(() => false);
     }
 
-    const flushedAttempts = await this.flushPendingAttempts(profile || undefined);
-    const flushedActivities = await this.flushPendingActivities();
+    const flushedAttempts = attemptsQuotaPaused
+      ? { synced: 0, failed: this.getPendingAttempts().length, lastError: this.collectionErrors.attempts }
+      : await this.flushPendingAttempts(profile || undefined);
+    const flushedActivities = activitiesQuotaPaused
+      ? { synced: 0, failed: this.getPendingActivities().length, lastError: this.collectionErrors.activities }
+      : await this.flushPendingActivities();
 
     const pendingAttemptsRemaining = this.getPendingAttempts().length;
     const pendingActivitiesRemaining = this.getPendingActivities().length;
@@ -1371,9 +1686,18 @@ class ApiService {
 
     if (options?.force) {
       this.clearQuotaCooldown();
-    } else if (this.isQuotaCooldownActive()) {
-      return false;
+      this.emitCloudReconnect();
     } else if (!options?.studentsOnly && Date.now() - this.lastManualRefreshAt < 10000) {
+      return false;
+    }
+
+    const attemptsAllowed = Boolean(options?.force) || !this.isQuotaCooldownActive('attempts');
+    const activitiesAllowed = Boolean(options?.force) || !this.isQuotaCooldownActive('activities');
+    const studentsAllowed = Boolean(options?.force) || !this.isQuotaCooldownActive('students');
+
+    if (options?.studentsOnly) {
+      if (!studentsAllowed) return false;
+    } else if (!attemptsAllowed && !activitiesAllowed && !studentsAllowed) {
       return false;
     }
 
@@ -1411,17 +1735,23 @@ class ApiService {
       }
 
       const needStudents =
-        Boolean(options?.force) ||
-        Boolean(options?.studentsOnly) ||
-        this.cloudStudents.length === 0 ||
-        Date.now() - this.lastStudentsSyncAt > STUDENTS_REFRESH_TTL_MS;
+        studentsAllowed &&
+        (Boolean(options?.force) ||
+          Boolean(options?.studentsOnly) ||
+          this.cloudStudents.length === 0 ||
+          Date.now() - this.lastStudentsSyncAt > STUDENTS_REFRESH_TTL_MS);
+
+      const effectiveAttemptsSince =
+        options?.force || this.cloudAttempts.length === 0 ? 0 : this.lastAttemptCreatedMs;
+      const effectiveActivitiesSince =
+        options?.force || this.cloudActivities.length === 0 ? 0 : this.lastActivityCreatedMs;
 
       try {
         const snap = await fetchCloudDataOnce({
-          attemptsSinceCreatedMs: this.lastAttemptCreatedMs,
-          activitiesSinceCreatedMs: this.lastActivityCreatedMs,
-          includeAttempts: !options?.studentsOnly,
-          includeActivities: !options?.studentsOnly,
+          attemptsSinceCreatedMs: effectiveAttemptsSince,
+          activitiesSinceCreatedMs: effectiveActivitiesSince,
+          includeAttempts: !options?.studentsOnly && attemptsAllowed,
+          includeActivities: !options?.studentsOnly && activitiesAllowed,
           includeStudents: needStudents,
         });
 
@@ -1441,14 +1771,35 @@ class ApiService {
             }
             if (typeof snap.hasMore.attempts === 'boolean') {
               this.hasMoreAttempts = snap.hasMore.attempts;
+              if (effectiveAttemptsSince === 0 && !snap.hasMore.attempts) {
+                this.attemptsHistoryComplete = true;
+              }
             }
             delete this.collectionErrors.attempts;
             if (this.mergeAttemptsIntoLocalCache(merged.list)) shouldEmit = true;
             anySuccess = true;
+
+            // Also recover legacy Firestore attempt documents that may lack a createdAt field
+            if (
+              (options?.force || effectiveAttemptsSince === 0) &&
+              !this.isQuotaCooldownActive('attempts')
+            ) {
+              const fallbackRes = await fetchAttemptsTimestampFallback(250);
+              if (fallbackRes.error) {
+                if (this.isQuotaError(fallbackRes.error)) {
+                  this.triggerQuotaCooldown(fallbackRes.error, 'attempts');
+                }
+              } else if (fallbackRes.attempts.length > 0) {
+                const fallbackMerged = this.mergeCloudAttemptsList(fallbackRes.attempts);
+                this.cloudAttempts = fallbackMerged.list;
+                if (fallbackMerged.changed) shouldEmit = true;
+                if (this.mergeAttemptsIntoLocalCache(fallbackMerged.list)) shouldEmit = true;
+              }
+            }
           } else if (snap.errors.attempts) {
             this.collectionErrors.attempts = snap.errors.attempts.slice(0, 240);
             if (this.isQuotaError(snap.errors.attempts)) {
-              this.triggerQuotaCooldown(snap.errors.attempts);
+              this.triggerQuotaCooldown(snap.errors.attempts, 'attempts');
             }
             shouldEmit = true;
           }
@@ -1464,7 +1815,7 @@ class ApiService {
           } else if (snap.errors.students) {
             this.collectionErrors.students = snap.errors.students.slice(0, 240);
             if (this.isQuotaError(snap.errors.students)) {
-              this.triggerQuotaCooldown(snap.errors.students);
+              this.triggerQuotaCooldown(snap.errors.students, 'students');
             }
             shouldEmit = true;
           }
@@ -1495,19 +1846,20 @@ class ApiService {
           } else if (snap.errors.activities) {
             this.collectionErrors.activities = snap.errors.activities.slice(0, 240);
             if (this.isQuotaError(snap.errors.activities)) {
-              this.triggerQuotaCooldown(snap.errors.activities);
+              this.triggerQuotaCooldown(snap.errors.activities, 'activities');
             }
             shouldEmit = true;
           }
 
           const errMsgs = Object.values(this.collectionErrors).filter(Boolean);
-          this.cloudLastError = errMsgs.length > 0 ? errMsgs[0]! : null;
+          this.cloudLastError =
+            this.collectionErrors.attempts || (errMsgs.length > 0 ? errMsgs[0]! : null);
           this.persistAdminCache();
         }
       } catch (e: any) {
         const msg = e?.message ? String(e.message).slice(0, 240) : 'Firestore sync error';
         if (this.isQuotaError(msg)) {
-          this.triggerQuotaCooldown(msg);
+          this.triggerQuotaCooldown(msg, options?.studentsOnly ? 'students' : 'attempts');
         } else {
           this.cloudLastError = msg;
         }
@@ -1516,6 +1868,15 @@ class ApiService {
 
       if (this.isLocalExpressEnvironment() && isTeacherFirebaseUser(auth.currentUser)) {
         this.runTeacherBidirectionalSync(teacherHeaders || {}).catch(() => {});
+      }
+
+      if (
+        !options?.studentsOnly &&
+        this.hasMoreAttempts &&
+        !this.attemptsHistoryComplete &&
+        !this.isQuotaCooldownActive('attempts')
+      ) {
+        this.scheduleAutoBackfillOlderAttempts();
       }
 
       if (shouldEmit) {
@@ -1541,7 +1902,7 @@ class ApiService {
     if (this.loadingOlderAttempts || !this.oldestAttemptCreatedMs || !this.hasMoreAttempts) {
       return { loaded: 0, hasMore: this.hasMoreAttempts };
     }
-    if (this.isQuotaCooldownActive()) {
+    if (this.isQuotaCooldownActive('attempts')) {
       return {
         loaded: 0,
         hasMore: this.hasMoreAttempts,
@@ -1555,7 +1916,7 @@ class ApiService {
       const res = await fetchOlderAttemptsPage(this.oldestAttemptCreatedMs);
       if (res.error) {
         if (this.isQuotaError(res.error)) {
-          this.triggerQuotaCooldown(res.error);
+          this.triggerQuotaCooldown(res.error, 'attempts');
         }
         return { loaded: 0, hasMore: this.hasMoreAttempts, error: res.error };
       }
@@ -1569,6 +1930,9 @@ class ApiService {
         this.oldestAttemptCreatedMs = res.oldestCreatedMs;
       }
       this.hasMoreAttempts = res.hasMore;
+      if (!res.hasMore) {
+        this.attemptsHistoryComplete = true;
+      }
       this.mergeAttemptsIntoLocalCache(merged.list);
       this.persistAdminCache();
       this.emitDataChanged();
@@ -1591,7 +1955,7 @@ class ApiService {
     if (this.loadingOlderAttempts || !this.oldestAttemptCreatedMs || !this.hasMoreAttempts) {
       return { loaded: 0, pagesLoaded: 0, hasMore: this.hasMoreAttempts };
     }
-    if (this.isQuotaCooldownActive()) {
+    if (this.isQuotaCooldownActive('attempts')) {
       return {
         loaded: 0,
         pagesLoaded: 0,
@@ -1611,7 +1975,7 @@ class ApiService {
         pagesLoaded < maxPages &&
         this.hasMoreAttempts &&
         this.oldestAttemptCreatedMs > 0 &&
-        !this.isQuotaCooldownActive()
+        !this.isQuotaCooldownActive('attempts')
       ) {
         const prevOldest = this.oldestAttemptCreatedMs;
         const prevCount = this.cloudAttempts.length;
@@ -1619,7 +1983,7 @@ class ApiService {
         if (res.error) {
           lastError = res.error;
           if (this.isQuotaError(res.error)) {
-            this.triggerQuotaCooldown(res.error);
+            this.triggerQuotaCooldown(res.error, 'attempts');
           }
           break;
         }
@@ -1635,10 +1999,14 @@ class ApiService {
           this.oldestAttemptCreatedMs = res.oldestCreatedMs;
         }
         this.hasMoreAttempts = res.hasMore;
+        if (!res.hasMore) {
+          this.attemptsHistoryComplete = true;
+        }
         this.mergeAttemptsIntoLocalCache(merged.list);
         this.persistAdminCache();
 
         if (!res.hasMore || res.attempts.length === 0) {
+          this.attemptsHistoryComplete = true;
           break;
         }
         // Guard against an identical page loop if fallback query returned only already-known docs
@@ -1666,7 +2034,7 @@ class ApiService {
     if (this.loadingOlderActivities || !this.oldestActivityCreatedMs || !this.hasMoreActivities) {
       return { loaded: 0, hasMore: this.hasMoreActivities };
     }
-    if (this.isQuotaCooldownActive()) {
+    if (this.isQuotaCooldownActive('activities')) {
       return {
         loaded: 0,
         hasMore: this.hasMoreActivities,
@@ -1680,7 +2048,7 @@ class ApiService {
       const res = await fetchOlderActivitiesPage(this.oldestActivityCreatedMs);
       if (res.error) {
         if (this.isQuotaError(res.error)) {
-          this.triggerQuotaCooldown(res.error);
+          this.triggerQuotaCooldown(res.error, 'activities');
         }
         return { loaded: 0, hasMore: this.hasMoreActivities, error: res.error };
       }
@@ -1711,7 +2079,7 @@ class ApiService {
     if (typeof window === 'undefined') return;
     // Zero 15-second polling! Live updates flow via incremental onSnapshot listeners in App.tsx.
     // Only fetch student roster once on open if cache is empty or older than 15 minutes.
-    if (!isTeacherFirebaseUser(auth.currentUser) || this.isQuotaCooldownActive()) return;
+    if (!isTeacherFirebaseUser(auth.currentUser) || this.isQuotaCooldownActive('students')) return;
     const studentsStale =
       this.cloudStudents.length === 0 ||
       Date.now() - this.lastStudentsSyncAt > STUDENTS_REFRESH_TTL_MS;
@@ -1737,8 +2105,7 @@ class ApiService {
         return;
       }
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-      if (this.isQuotaCooldownActive()) return;
-      if (this.hasPendingStudentSyncData()) {
+      if (this.hasRetryablePendingStudentSyncData()) {
         this.syncStudentDeviceHistoryToServer(user).catch(() => {});
       }
     }, 25000);
@@ -1986,30 +2353,16 @@ class ApiService {
 
   private getLocalAttempts(): ExamRecord[] {
     const byId = new Map<string, ExamRecord>();
-    this.getPureLocalExamRecords().forEach((r) => {
-      byId.set(r.id, r);
-    });
+    const upsertLossless = (r: ExamRecord) => {
+      if (!r || !r.id || isLegacyDemoAttemptId(r.id) || isLegacyDemoStudentId(r.studentId)) return;
+      const key = sanitizeAttemptMergeKey(r.id);
+      byId.set(key, mergeExamRecordsKeepingDetails(byId.get(key), r));
+    };
 
-    // Include any device-pending attempts so offline/queued items remain visible cleanly
-    this.getPendingAttempts().forEach((r) => {
-      if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
-        if (!byId.has(r.id)) byId.set(r.id, r);
-      }
-    });
-
-    // Server-captured attempts across all student devices
-    this.serverAttempts.forEach((r) => {
-      if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
-        byId.set(r.id, r);
-      }
-    });
-
-    // Cloud Firestore attempts take precedence and stay live across all devices
-    this.cloudAttempts.forEach((r) => {
-      if (r && r.id && !isLegacyDemoAttemptId(r.id) && !isLegacyDemoStudentId(r.studentId)) {
-        byId.set(r.id, r);
-      }
-    });
+    this.getPureLocalExamRecords().forEach(upsertLossless);
+    this.getPendingAttempts().forEach(upsertLossless);
+    this.serverAttempts.forEach(upsertLossless);
+    this.cloudAttempts.forEach(upsertLossless);
 
     return Array.from(byId.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }
@@ -2024,22 +2377,21 @@ class ApiService {
 
   private saveLocalAttemptsList(list: ExamRecord[]): void {
     const sorted = [...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    try {
-      safeSetItem(EXAM_RECORDS_KEY, JSON.stringify(sorted));
-    } catch {
-      // Compact oldest detailed items if quota is tight, prioritizing pending & recent items
-      const pendingIds = this.getPendingAttemptIdSet();
-      const compacted = sorted.map((r, idx) =>
-        idx < 80 || pendingIds.has(sanitizeFirestoreId(r.id, 'att')) ? r : { ...r, details: [] }
-      );
-      safeSetItem(EXAM_RECORDS_KEY, JSON.stringify(compacted.slice(0, 400)));
+    const pendingIds = this.getPendingAttemptIdSet();
+    writeAttemptsArrayToLocalStorage(EXAM_RECORDS_KEY, sorted, pendingIds);
+    if (sorted.length > 0) {
+      idbPutMany('attempts', sorted.slice(0, 200)).catch(() => false);
     }
   }
 
   private saveLocalAttempt(record: ExamRecord): void {
-    const list = this.getPureLocalExamRecords().filter((r) => r.id !== record.id);
+    const targetKey = sanitizeAttemptMergeKey(record.id);
+    const list = this.getPureLocalExamRecords().filter(
+      (r) => sanitizeAttemptMergeKey(r.id) !== targetKey
+    );
     list.unshift(record);
     this.saveLocalAttemptsList(list);
+    idbPutMany('attempts', [record]).catch(() => false);
   }
 
   private filterAttemptsLocal(
@@ -2206,7 +2558,8 @@ class ApiService {
 
   async teacherLogout(): Promise<void> {
     this.setTeacherToken(null);
-    this.clearAdminCache();
+    // Preserve persisted local & IndexedDB admin caches on logout so logging back in
+    // during read-quota limits or offline periods never loses previously loaded student attempts.
     await signOutFirebase();
     this.setCloudAuthContext(null);
   }
@@ -2835,17 +3188,14 @@ class ApiService {
   // =========================================================================
   private addPendingAttempt(record: ExamRecord): void {
     try {
-      const pending = this.getPendingAttempts().filter((r) => r && r.id !== record.id);
+      const targetKey = sanitizeAttemptMergeKey(record.id);
+      const pending = this.getPendingAttempts().filter(
+        (r) => r && sanitizeAttemptMergeKey(r.id) !== targetKey
+      );
       pending.unshift(record);
-      try {
-        safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(pending));
-      } catch {
-        // Only if localStorage quota is exceeded, compact heavy per-question feedback on older items without dropping records
-        const compacted = pending.map((r, idx) =>
-          idx < 40 ? r : { ...r, details: Array.isArray(r.details) ? r.details.slice(0, 60) : [] }
-        );
-        safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(compacted));
-      }
+      writeAttemptsArrayToLocalStorage(PENDING_ATTEMPTS_KEY, pending);
+      idbPutMany('pending_attempts', [record]).catch(() => false);
+      idbPutMany('attempts', [record]).catch(() => false);
     } catch {
       // ignore
     }
@@ -2875,7 +3225,7 @@ class ApiService {
       date: record.date || new Date(record.timestamp || Date.now()).toLocaleDateString('vi-VN'),
     };
 
-    // Always preserve locally and in pending queue FIRST until Firestore confirms
+    // Always preserve locally, in IndexedDB, and in pending queue FIRST until Firestore confirms
     this.saveLocalAttempt(normalizedRecord);
     this.addPendingAttempt(normalizedRecord);
 
@@ -2918,7 +3268,7 @@ class ApiService {
         }
       }
 
-      if (isCloudSyncEligibleUser(auth.currentUser) && !this.isQuotaCooldownActive()) {
+      if (isCloudSyncEligibleUser(auth.currentUser) && !this.isQuotaCooldownActive('attempts')) {
         const res = await syncAttemptToCloud(normalizedRecord, studentProfile);
         firebaseSynced = res.synced;
         if (res.synced) {
@@ -2927,20 +3277,21 @@ class ApiService {
             this.cloudAttempts = [normalizedRecord, ...this.cloudAttempts];
           }
           delete this.collectionErrors.attempts;
-          this.cloudLastError = null;
+          const remainingErrs = Object.values(this.collectionErrors).filter(Boolean);
+          this.cloudLastError = remainingErrs.length > 0 ? remainingErrs[0]! : null;
         } else {
           syncError = res.errorMessage || res.errorCode || 'Firestore chưa xác nhận lưu bài làm.';
           if (this.isQuotaError(syncError)) {
-            this.triggerQuotaCooldown(syncError);
+            this.triggerQuotaCooldown(syncError, 'attempts');
           }
         }
-      } else if (this.isQuotaCooldownActive()) {
+      } else if (this.isQuotaCooldownActive('attempts')) {
         syncError = 'Máy chủ đang tạm giới hạn hạn mức đọc/ghi miễn phí; bài làm đã lưu an toàn vào hàng đợi tự đồng bộ lại.';
       }
     } catch (e: any) {
       syncError = e?.message ? String(e.message) : 'Lỗi kết nối Firestore.';
       if (this.isQuotaError(syncError)) {
-        this.triggerQuotaCooldown(syncError);
+        this.triggerQuotaCooldown(syncError, 'attempts');
       }
       console.warn('Firestore attempt sync warning:', e);
     }
@@ -2948,6 +3299,7 @@ class ApiService {
     if (firebaseSynced) {
       this.removePendingAttempt(normalizedRecord.id);
     } else if (syncError) {
+      this.collectionErrors.attempts = syncError.slice(0, 240);
       this.cloudLastError = syncError.slice(0, 240);
     }
 
@@ -2974,7 +3326,7 @@ class ApiService {
     totalRecords: number;
   } {
     const existing = this.getLocalAttempts();
-    const existingIds = new Set(existing.map((r) => r.id));
+    const existingIds = new Set(existing.map((r) => sanitizeAttemptMergeKey(r.id)));
     let importedCount = 0;
     let duplicateCount = 0;
 
@@ -2983,11 +3335,11 @@ class ApiService {
     for (const rec of records) {
       const safeId = sanitizeFirestoreId(rec.id, 'zalo');
       const cleanRec: ExamRecord = { ...rec, id: safeId };
-      if (existingIds.has(cleanRec.id)) {
+      if (existingIds.has(sanitizeAttemptMergeKey(cleanRec.id))) {
         duplicateCount++;
         continue;
       }
-      existingIds.add(cleanRec.id);
+      existingIds.add(sanitizeAttemptMergeKey(cleanRec.id));
       merged.unshift(cleanRec);
       newlyImported.push(cleanRec);
       importedCount++;
@@ -3027,13 +3379,26 @@ class ApiService {
   }
 
   deleteExamRecord(recordId: string): ExamRecord[] {
-    this.cloudAttempts = this.cloudAttempts.filter((r) => r.id !== recordId);
-    this.serverAttempts = this.serverAttempts.filter((r) => r.id !== recordId);
+    const targetKey = sanitizeAttemptMergeKey(recordId);
+    this.cloudAttempts = this.cloudAttempts.filter(
+      (r) => r.id !== recordId && sanitizeAttemptMergeKey(r.id) !== targetKey
+    );
+    this.serverAttempts = this.serverAttempts.filter(
+      (r) => r.id !== recordId && sanitizeAttemptMergeKey(r.id) !== targetKey
+    );
     this.confirmedCloudAttemptIds.delete(sanitizeFirestoreId(recordId, 'att'));
     this.removePendingAttempt(recordId);
-    const updatedPure = this.getPureLocalExamRecords().filter((r) => r.id !== recordId);
+    const updatedPure = this.getPureLocalExamRecords().filter(
+      (r) => r.id !== recordId && sanitizeAttemptMergeKey(r.id) !== targetKey
+    );
     this.saveLocalAttemptsList(updatedPure);
-    const updated = this.getLocalAttempts().filter((r) => r.id !== recordId);
+    idbDeleteById('attempts', recordId).catch(() => false);
+    if (this.cloudIsTeacher || this.getTeacherToken()) {
+      this.persistAdminCache();
+    }
+    const updated = this.getLocalAttempts().filter(
+      (r) => r.id !== recordId && sanitizeAttemptMergeKey(r.id) !== targetKey
+    );
     if (isTeacherFirebaseUser(auth.currentUser)) {
       deleteAttemptFromCloud(recordId).catch((e) =>
         console.warn('Cloud delete attempt warning:', e)
@@ -3069,8 +3434,12 @@ class ApiService {
 
   private removePendingAttempt(recordId: string): void {
     try {
-      const pending = this.getPendingAttempts().filter((r) => r && r.id !== recordId);
-      safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(pending));
+      const targetKey = sanitizeAttemptMergeKey(recordId);
+      const pending = this.getPendingAttempts().filter(
+        (r) => r && r.id !== recordId && sanitizeAttemptMergeKey(r.id) !== targetKey
+      );
+      writeAttemptsArrayToLocalStorage(PENDING_ATTEMPTS_KEY, pending);
+      idbDeleteById('pending_attempts', recordId).catch(() => false);
     } catch {
       // ignore
     }
@@ -3082,11 +3451,12 @@ class ApiService {
     const pending = this.getPendingAttempts();
     if (pending.length === 0) return { synced: 0, failed: 0 };
 
-    if (this.isQuotaCooldownActive()) {
+    if (this.isQuotaCooldownActive('attempts')) {
       return {
         synced: 0,
         failed: pending.length,
         lastError:
+          this.collectionErrors.attempts ||
           this.cloudLastError ||
           'Máy chủ đang tạm nghỉ theo hạn mức miễn phí; hàng đợi vẫn được bảo toàn.',
       };
@@ -3124,7 +3494,7 @@ class ApiService {
         continue;
       }
 
-      if (this.isQuotaCooldownActive()) {
+      if (this.isQuotaCooldownActive('attempts')) {
         for (let j = i; j < pending.length; j++) {
           if (pending[j] && pending[j].id) {
             stillPending.push(pending[j]);
@@ -3146,15 +3516,15 @@ class ApiService {
         } else if (res.errorMessage || res.errorCode) {
           lastError = res.errorMessage || res.errorCode;
           if (this.isQuotaError(lastError)) {
-            this.triggerQuotaCooldown(lastError);
-          } else if (res.errorCode === 'permission-denied' && res.profileVerified) {
+            this.triggerQuotaCooldown(lastError, 'attempts');
+          } else if (res.errorCode?.includes('permission-denied') && res.profileVerified) {
             this.sessionPermissionLockedAttemptIds.add(safeId);
           }
         }
       } catch (e: any) {
         lastError = e?.message ? String(e.message) : 'Firestore write error';
         if (this.isQuotaError(lastError)) {
-          this.triggerQuotaCooldown(lastError);
+          this.triggerQuotaCooldown(lastError, 'attempts');
         }
         console.warn('Pending attempt Firestore sync warning:', e);
       }
@@ -3171,12 +3541,15 @@ class ApiService {
       }
     }
 
-    safeSetItem(PENDING_ATTEMPTS_KEY, JSON.stringify(stillPending));
+    writeAttemptsArrayToLocalStorage(PENDING_ATTEMPTS_KEY, stillPending);
+    idbReplaceAll('pending_attempts', stillPending).catch(() => false);
     if (lastError && failed > 0) {
+      this.collectionErrors.attempts = lastError.slice(0, 240);
       this.cloudLastError = lastError.slice(0, 240);
     } else if (failed === 0) {
       delete this.collectionErrors.attempts;
-      if (Object.keys(this.collectionErrors).length === 0) this.cloudLastError = null;
+      const remainingErrs = Object.values(this.collectionErrors).filter(Boolean);
+      this.cloudLastError = remainingErrs.length > 0 ? remainingErrs[0]! : null;
     }
     if (synced > 0 || failed > 0) this.emitDataChanged();
     return { synced, failed, lastError };
@@ -3198,13 +3571,13 @@ class ApiService {
       };
     }
 
-    if (this.isQuotaCooldownActive()) {
+    if (this.isQuotaCooldownActive('attempts') && this.isQuotaCooldownActive('activities')) {
       return {
         recoveredAttempts: 0,
         recoveredActivities: 0,
         pendingAttempts: this.getPendingAttempts().length,
         pendingActivities: this.getPendingActivities().length,
-        error: this.cloudLastError || undefined,
+        error: this.collectionErrors.attempts || this.cloudLastError || undefined,
       };
     }
 
@@ -3253,12 +3626,14 @@ class ApiService {
       let recoveredActivities = 0;
 
       // 1. Flush explicit pending attempts queue first (no cap; zero collection scan reads!)
-      const flushedAtt = await this.flushPendingAttempts(user);
-      recoveredAttempts += flushedAtt.synced;
-      if (flushedAtt.lastError) lastError = flushedAtt.lastError;
+      if (!this.isQuotaCooldownActive('attempts')) {
+        const flushedAtt = await this.flushPendingAttempts(user);
+        recoveredAttempts += flushedAtt.synced;
+        if (flushedAtt.lastError) lastError = flushedAtt.lastError;
+      }
 
-      // 2. Scan ALL dia_li_10_exam_records on device (no 40-record limit) and backfill any unconfirmed attempts
-      if (!this.isQuotaCooldownActive()) {
+      // 2. Scan ALL dia_li_10_exam_records on device and backfill any unconfirmed attempts
+      if (!this.isQuotaCooldownActive('attempts')) {
         try {
           const rawLocalAttempts = this.getPureLocalExamRecords().filter(
             (r) =>
@@ -3270,7 +3645,7 @@ class ApiService {
           const pendingIds = this.getPendingAttemptIdSet();
 
           for (const att of rawLocalAttempts) {
-            if (this.isQuotaCooldownActive()) break;
+            if (this.isQuotaCooldownActive('attempts')) break;
             const safeId = sanitizeFirestoreId(att.id, 'att');
             if (this.confirmedCloudAttemptIds.has(safeId)) {
               this.removePendingAttempt(att.id);
@@ -3292,13 +3667,14 @@ class ApiService {
               recoveredAttempts++;
             } else {
               if (this.isQuotaError(res.errorMessage || res.errorCode)) {
-                this.triggerQuotaCooldown(res.errorMessage || res.errorCode);
+                this.triggerQuotaCooldown(res.errorMessage || res.errorCode, 'attempts');
                 this.addPendingAttempt(att);
                 lastError = res.errorMessage || res.errorCode;
                 break;
               }
-              if (res.errorCode === 'permission-denied' && res.profileVerified) {
+              if (res.errorCode?.includes('permission-denied') && res.profileVerified) {
                 this.sessionPermissionLockedAttemptIds.add(safeId);
+                this.addPendingAttempt(att);
                 continue;
               }
               this.addPendingAttempt(att);
@@ -3312,15 +3688,15 @@ class ApiService {
         }
       }
 
-      // 3. Flush explicit pending activities queue first
-      if (!this.isQuotaCooldownActive()) {
+      // 3. Flush explicit pending activities queue independently
+      if (!this.isQuotaCooldownActive('activities')) {
         const flushedAct = await this.flushPendingActivities();
         recoveredActivities += flushedAct.synced;
         if (flushedAct.lastError && !lastError) lastError = flushedAct.lastError;
       }
 
-      // 4. Scan ALL dia_li_10_learning_activities on device (no 40-record limit) and backfill any unconfirmed activities
-      if (!this.isQuotaCooldownActive()) {
+      // 4. Scan ALL dia_li_10_learning_activities on device and backfill any unconfirmed activities
+      if (!this.isQuotaCooldownActive('activities')) {
         try {
           const rawLocalActs = this.getLocalActivitiesList().filter((a) => a && a.id);
           const pendingActIds = new Set(
@@ -3328,7 +3704,7 @@ class ApiService {
           );
 
           for (const act of rawLocalActs) {
-            if (this.isQuotaCooldownActive()) break;
+            if (this.isQuotaCooldownActive('activities')) break;
             const safeId = sanitizeFirestoreId(act.id, 'act');
             if (this.confirmedCloudActivityIds.has(safeId) || pendingActIds.has(safeId)) {
               continue;
@@ -3342,7 +3718,7 @@ class ApiService {
               recoveredActivities++;
             } else {
               if (this.isQuotaError(res.errorMessage || res.errorCode)) {
-                this.triggerQuotaCooldown(res.errorMessage || res.errorCode);
+                this.triggerQuotaCooldown(res.errorMessage || res.errorCode, 'activities');
                 lastError = res.errorMessage || res.errorCode;
                 break;
               }
@@ -3400,7 +3776,10 @@ class ApiService {
       const sorted = [...list]
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
         .slice(0, 5000);
-      safeSetItem(ACTIVITIES_KEY, JSON.stringify(sorted));
+      writeActivitiesArrayToLocalStorage(ACTIVITIES_KEY, sorted);
+      if (sorted.length > 0) {
+        idbPutMany('activities', sorted.slice(0, 500)).catch(() => false);
+      }
     } catch {
       // ignore
     }
@@ -3421,13 +3800,10 @@ class ApiService {
 
   private savePendingActivities(list: LearningActivity[]): void {
     try {
-      safeSetItem(PENDING_ACTIVITIES_KEY, JSON.stringify(list));
+      writeActivitiesArrayToLocalStorage(PENDING_ACTIVITIES_KEY, list);
+      idbReplaceAll('pending_activities', list).catch(() => false);
     } catch {
-      try {
-        safeSetItem(PENDING_ACTIVITIES_KEY, JSON.stringify(list.slice(0, 1000)));
-      } catch {
-        // ignore
-      }
+      // ignore
     }
   }
 
@@ -3522,7 +3898,7 @@ class ApiService {
     }
 
     if (this.syncingActivityIds.has(activity.id)) return false;
-    if (this.isQuotaCooldownActive()) return false;
+    if (this.isQuotaCooldownActive('activities')) return false;
     this.syncingActivityIds.add(activity.id);
     try {
       if (!isCloudSyncEligibleUser(auth.currentUser)) {
@@ -3532,7 +3908,7 @@ class ApiService {
         }
       }
       let firebaseOk = false;
-      if (isCloudSyncEligibleUser(auth.currentUser) && !this.isQuotaCooldownActive()) {
+      if (isCloudSyncEligibleUser(auth.currentUser) && !this.isQuotaCooldownActive('activities')) {
         const res = await syncActivityToCloud(activity);
         firebaseOk = res.synced;
         if (res.synced) {
@@ -3541,7 +3917,7 @@ class ApiService {
             this.cloudActivities = [activity, ...this.cloudActivities];
           }
         } else if (this.isQuotaError(res.errorMessage || res.errorCode)) {
-          this.triggerQuotaCooldown(res.errorMessage || res.errorCode);
+          this.triggerQuotaCooldown(res.errorMessage || res.errorCode, 'activities');
         }
       }
 
@@ -3569,11 +3945,11 @@ class ApiService {
     const pending = this.getPendingActivities();
     if (pending.length === 0) return { synced: 0, failed: 0 };
 
-    if (this.isQuotaCooldownActive()) {
+    if (this.isQuotaCooldownActive('activities')) {
       return {
         synced: 0,
         failed: pending.length,
-        lastError: this.cloudLastError || undefined,
+        lastError: this.collectionErrors.activities || this.cloudLastError || undefined,
       };
     }
 
@@ -3606,7 +3982,7 @@ class ApiService {
         synced++;
         continue;
       }
-      if (this.isQuotaCooldownActive()) {
+      if (this.isQuotaCooldownActive('activities')) {
         for (let j = i; j < pending.length; j++) {
           if (pending[j] && pending[j].id) {
             stillPending.push(pending[j]);
@@ -3636,7 +4012,7 @@ class ApiService {
         } else if (res.errorMessage || res.errorCode) {
           lastError = res.errorMessage || res.errorCode;
           if (this.isQuotaError(lastError)) {
-            this.triggerQuotaCooldown(lastError);
+            this.triggerQuotaCooldown(lastError, 'activities');
           }
         }
 
@@ -3653,7 +4029,7 @@ class ApiService {
       } catch (e: any) {
         lastError = e?.message ? String(e.message) : 'Firestore activity write error';
         if (this.isQuotaError(lastError)) {
-          this.triggerQuotaCooldown(lastError);
+          this.triggerQuotaCooldown(lastError, 'activities');
         }
         failed++;
         stillPending.push(item);
